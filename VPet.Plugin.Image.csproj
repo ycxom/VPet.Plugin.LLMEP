@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <OutputType>Library</OutputType>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <UseWPF>true</UseWPF>
+    <ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
+    <Nullable>disable</Nullable>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <DesignTimeBuild>true</DesignTimeBuild>
+    <LangVersion>11.0</LangVersion>
+  </PropertyGroup>
+  
+  <ItemGroup>
+    <Compile Remove="1102_Image\**" />
+    <EmbeddedResource Remove="1102_Image\**" />
+    <Page Remove="1102_Image\**" />
+    <None Include="1102_Image\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <PackageReference Include="VPet-Simulator.Core" Version="1.1.0.58" />
+    <PackageReference Include="VPet-Simulator.Windows.Interface" Version="1.1.0.58" />
+    <PackageReference Include="WpfAnimatedGif" Version="2.0.2" />
+  </ItemGroup>
+  
+  <!-- 编译后自动复制 DLL 到 plugin 目录 -->
+  <Target Name="CopyToPlugin" AfterTargets="Build">
+    <MakeDir Directories="$(ProjectDir)1102_Image\plugin\" Condition="!Exists('$(ProjectDir)1102_Image\plugin\')" />
+    <ItemGroup>
+      <PluginFiles Include="$(OutputPath)*.dll" Exclude="$(OutputPath)VPet-Simulator*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PluginFiles)" DestinationFolder="$(ProjectDir)1102_Image\plugin\" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
