@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using VPet.Plugin.Image.EmotionAnalysis;
 
 namespace VPet.Plugin.Image
 {
@@ -45,6 +46,11 @@ namespace VPet.Plugin.Image
         public bool DebugMode { get; set; } = true;
 
         /// <summary>
+        /// 情感分析设置
+        /// </summary>
+        public EmotionAnalysisSettings EmotionAnalysis { get; set; } = new EmotionAnalysisSettings();
+
+        /// <summary>
         /// 克隆设置对象
         /// </summary>
         public ImageSettings Clone()
@@ -57,7 +63,8 @@ namespace VPet.Plugin.Image
                 DisplayDuration = this.DisplayDuration,
                 DisplayInterval = this.DisplayInterval,
                 UseRandomInterval = this.UseRandomInterval,
-                DebugMode = this.DebugMode
+                DebugMode = this.DebugMode,
+                EmotionAnalysis = this.EmotionAnalysis?.Clone()
             };
         }
 
@@ -67,14 +74,16 @@ namespace VPet.Plugin.Image
         public bool Equals(ImageSettings other)
         {
             if (other == null) return false;
-            
+
             return IsEnabled == other.IsEnabled &&
                    EnableBuiltInImages == other.EnableBuiltInImages &&
                    EnableDIYImages == other.EnableDIYImages &&
                    DisplayDuration == other.DisplayDuration &&
                    DisplayInterval == other.DisplayInterval &&
                    UseRandomInterval == other.UseRandomInterval &&
-                   DebugMode == other.DebugMode;
+                   DebugMode == other.DebugMode &&
+                   (EmotionAnalysis == null && other.EmotionAnalysis == null ||
+                    EmotionAnalysis != null && EmotionAnalysis.Equals(other.EmotionAnalysis));
         }
 
         /// <summary>
@@ -95,7 +104,7 @@ namespace VPet.Plugin.Image
             {
                 Console.WriteLine($"[VPet表情包] 加载设置失败: {ex.Message}");
             }
-            
+
             return new ImageSettings();
         }
 
@@ -117,7 +126,7 @@ namespace VPet.Plugin.Image
                 {
                     WriteIndented = true
                 };
-                
+
                 string json = JsonSerializer.Serialize(this, options);
                 File.WriteAllText(filePath, json);
             }

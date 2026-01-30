@@ -22,6 +22,7 @@
     <PackageReference Include="VPet-Simulator.Core" Version="1.1.0.58" />
     <PackageReference Include="VPet-Simulator.Windows.Interface" Version="1.1.0.58" />
     <PackageReference Include="WpfAnimatedGif" Version="2.0.2" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
   </ItemGroup>
   
   <!-- 编译后自动复制 DLL 到 plugin 目录 -->

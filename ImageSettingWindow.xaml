@@ -544,6 +544,268 @@
                     </Border>
                 </Grid>
             </TabItem>
+
+            <!-- LLM情感分析 Tab -->
+            <TabItem Header="🤖 LLM情感分析" Style="{StaticResource ModernTabItem}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20">
+                    <StackPanel>
+                        <!-- 功能开关卡片 -->
+                        <Border Style="{StaticResource SettingCard}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="启用LLM情感分析" 
+                                             FontSize="14" 
+                                             FontWeight="Medium" 
+                                             Foreground="#333333"/>
+                                    <TextBlock Text="使用大语言模型分析VPet说话内容，自动选择匹配的表情包" 
+                                             Style="{StaticResource DescriptionText}"
+                                             Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <pu:Switch x:Name="SwitchEmotionAnalysis" 
+                                         Grid.Column="1"
+                                         Background="Transparent"
+                                         BorderBrush="#D0D0D0"
+                                         BoxHeight="24" 
+                                         BoxWidth="48"
+                                         CheckedBackground="#0078D4"
+                                         CheckedBorderBrush="#0078D4"
+                                         CheckedToggleBrush="White"
+                                         ToggleBrush="#999999"
+                                         ToggleShadowColor="{x:Null}"
+                                         ToggleSize="20"
+                                         Checked="SwitchEmotionAnalysis_Changed"
+                                         Unchecked="SwitchEmotionAnalysis_Changed"
+                                         VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- LLM提供商选择卡片 -->
+                        <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="LLM提供商" Style="{StaticResource SectionTitle}"/>
+                                <ComboBox x:Name="ComboBoxLLMProvider"
+                                        FontSize="14"
+                                        Padding="12,8"
+                                        SelectionChanged="ComboBoxLLMProvider_SelectionChanged">
+                                    <ComboBoxItem Content="OpenAI" Tag="openai"/>
+                                    <ComboBoxItem Content="Google Gemini" Tag="gemini"/>
+                                    <ComboBoxItem Content="Ollama (本地)" Tag="ollama"/>
+                                </ComboBox>
+                                <TextBlock Text="选择用于情感分析的LLM服务" 
+                                         Style="{StaticResource DescriptionText}"
+                                         Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- OpenAI配置卡片 -->
+                        <Border x:Name="PanelOpenAI" Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="OpenAI 配置" Style="{StaticResource SectionTitle}"/>
+                                
+                                <TextBlock Text="API Key" 
+                                         FontSize="13" 
+                                         Foreground="#666666"
+                                         Margin="0,0,0,6"/>
+                                <TextBox x:Name="TextBoxOpenAIKey"
+                                       FontSize="13"
+                                       Padding="10,8"
+                                       FontFamily="Consolas"
+                                       TextChanged="TextBoxOpenAIKey_TextChanged"/>
+                                
+                                <TextBlock Text="Base URL (可选)" 
+                                         FontSize="13" 
+                                         Foreground="#666666"
+                                         Margin="0,12,0,6"/>
+                                <TextBox x:Name="TextBoxOpenAIBaseUrl"
+                                       FontSize="13"
+                                       Padding="10,8"
+                                       FontFamily="Consolas"
+                                       Text="https://api.openai.com/v1"
+                                       TextChanged="TextBoxOpenAIBaseUrl_TextChanged"/>
+                                
+                                <TextBlock Text="💡 支持 OpenAI、OpenRouter、OneAPI 等兼容 API" 
+                                         Style="{StaticResource DescriptionText}"
+                                         Margin="0,4,0,0"/>
+                                
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="模型" 
+                                                 FontSize="13" 
+                                                 Foreground="#666666"
+                                                 Margin="0,0,0,6"/>
+                                        <ComboBox x:Name="ComboBoxOpenAIModel"
+                                                FontSize="13"
+                                                Padding="10,8"
+                                                IsEditable="True"
+                                                Text="gpt-3.5-turbo"
+                                                SelectionChanged="ComboBoxOpenAIModel_SelectionChanged"
+                                                LostFocus="ComboBoxOpenAIModel_LostFocus"/>
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            x:Name="ButtonFetchOpenAIModels"
+                                            Content="🔍 获取模型"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="ButtonFetchOpenAIModels_Click"
+                                            VerticalAlignment="Bottom"
+                                            Margin="8,0,0,0"
+                                            Padding="12,8"/>
+                                </Grid>
+                                
+                                <TextBlock TextWrapping="Wrap"
+                                         Style="{StaticResource DescriptionText}"
+                                         Margin="0,8,0,0">
+                                    <Run Text="💡 获取API Key: https://platform.openai.com/api-keys" />
+                                    <LineBreak/>
+                                    <Run Text="第三方API: OpenRouter (openrouter.ai/api/v1) | OneAPI (your-domain/v1)" />
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Gemini配置卡片 -->
+                        <Border x:Name="PanelGemini" Style="{StaticResource SettingCard}" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="Google Gemini 配置" Style="{StaticResource SectionTitle}"/>
+                                
+                                <TextBlock Text="API Key" 
+                                         FontSize="13" 
+                                         Foreground="#666666"
+                                         Margin="0,0,0,6"/>
+                                <TextBox x:Name="TextBoxGeminiKey"
+                                       FontSize="13"
+                                       Padding="10,8"
+                                       FontFamily="Consolas"
+                                       TextChanged="TextBoxGeminiKey_TextChanged"/>
+                                
+                                <TextBlock Text="Base URL (可选)" 
+                                         FontSize="13" 
+                                         Foreground="#666666"
+                                         Margin="0,12,0,6"/>
+                                <TextBox x:Name="TextBoxGeminiBaseUrl"
+                                       FontSize="13"
+                                       Padding="10,8"
+                                       FontFamily="Consolas"
+                                       Text="https://generativelanguage.googleapis.com/v1beta"
+                                       TextChanged="TextBoxGeminiBaseUrl_TextChanged"/>
+                                
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="模型" 
+                                                 FontSize="13" 
+                                                 Foreground="#666666"
+                                                 Margin="0,0,0,6"/>
+                                        <ComboBox x:Name="ComboBoxGeminiModel"
+                                                FontSize="13"
+                                                Padding="10,8"
+                                                IsEditable="True"
+                                                Text="gemini-pro"
+                                                SelectionChanged="ComboBoxGeminiModel_SelectionChanged"
+                                                LostFocus="ComboBoxGeminiModel_LostFocus"/>
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            x:Name="ButtonFetchGeminiModels"
+                                            Content="🔍 获取模型"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="ButtonFetchGeminiModels_Click"
+                                            VerticalAlignment="Bottom"
+                                            Margin="8,0,0,0"
+                                            Padding="12,8"/>
+                                </Grid>
+                                
+                                <TextBlock Text="💡 获取API Key: https://makersuite.google.com/app/apikey" 
+                                         Style="{StaticResource DescriptionText}"
+                                         Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Ollama配置卡片 -->
+                        <Border x:Name="PanelOllama" Style="{StaticResource SettingCard}" Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="Ollama 配置" Style="{StaticResource SectionTitle}"/>
+                                
+                                <TextBlock Text="Base URL" 
+                                         FontSize="13" 
+                                         Foreground="#666666"
+                                         Margin="0,0,0,6"/>
+                                <TextBox x:Name="TextBoxOllamaBaseUrl"
+                                       FontSize="13"
+                                       Padding="10,8"
+                                       FontFamily="Consolas"
+                                       Text="http://localhost:11434"
+                                       TextChanged="TextBoxOllamaBaseUrl_TextChanged"/>
+                                
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="模型" 
+                                                 FontSize="13" 
+                                                 Foreground="#666666"
+                                                 Margin="0,0,0,6"/>
+                                        <ComboBox x:Name="ComboBoxOllamaModel"
+                                                FontSize="13"
+                                                Padding="10,8"
+                                                IsEditable="True"
+                                                Text="llama2"
+                                                SelectionChanged="ComboBoxOllamaModel_SelectionChanged"
+                                                LostFocus="ComboBoxOllamaModel_LostFocus"/>
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            x:Name="ButtonFetchOllamaModels"
+                                            Content="🔍 获取模型"
+                                            Style="{StaticResource SecondaryButton}"
+                                            Click="ButtonFetchOllamaModels_Click"
+                                            VerticalAlignment="Bottom"
+                                            Margin="8,0,0,0"
+                                            Padding="12,8"/>
+                                </Grid>
+                                
+                                <TextBlock Text="💡 确保Ollama服务已在本地运行，推荐模型：llama3, mistral, llama2" 
+                                         Style="{StaticResource DescriptionText}"
+                                         Margin="0,8,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 标签文件说明卡片 -->
+                        <!-- <Border Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <TextBlock Text="📝 标签文件配置" Style="{StaticResource SectionTitle}"/>
+                                <TextBlock TextWrapping="Wrap" 
+                                         FontSize="13"
+                                         Foreground="#666666"
+                                         LineHeight="20">
+                                    <Run Text="在表情包目录中创建 "/>
+                                    <Run Text="label.txt" FontWeight="SemiBold" FontFamily="Consolas" Foreground="#0078D4"/>
+                                    <Run Text=" 文件，格式："/>
+                                    <LineBreak/>
+                                    <LineBreak/>
+                                    <Run Text="文件名.png: 标签1, 标签2, 标签3" FontFamily="Consolas" Background="#F5F5F5"/>
+                                    <LineBreak/>
+                                    <LineBreak/>
+                                    <Run Text="示例："/>
+                                    <LineBreak/>
+                                    <Run Text="happy_1.png: happy, joyful, excited, 开心" FontFamily="Consolas" Background="#F5F5F5"/>
+                                    <LineBreak/>
+                                    <Run Text="sad_1.png: sad, unhappy, depressed, 伤心" FontFamily="Consolas" Background="#F5F5F5"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </Border> -->
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
         </TabControl>
         
         <!-- 底部按钮栏 -->
