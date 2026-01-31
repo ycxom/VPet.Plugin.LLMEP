@@ -102,6 +102,7 @@
                                     <ComboBoxItem Content="OpenAI" Tag="openai"/>
                                     <ComboBoxItem Content="Google Gemini" Tag="gemini"/>
                                     <ComboBoxItem Content="Ollama (本地)" Tag="ollama"/>
+                                    <ComboBoxItem Content="Free (免费)" Tag="free"/>
                                 </ComboBox>
                             </StackPanel>
                         </GroupBox>
@@ -149,6 +150,18 @@
                                             SelectionChanged="ComboBoxOllamaModel_SelectionChanged" LostFocus="ComboBoxOllamaModel_LostFocus"/>
                                     <Button x:Name="ButtonFetchOllamaModels" Content="🔍 获取模型" Margin="10,0,0,0" Click="ButtonFetchOllamaModels_Click"/>
                                 </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Free配置 -->
+                        <GroupBox x:Name="PanelFree" Header="Free 配置 (免费)" Margin="0,0,0,20" Visibility="Collapsed">
+                            <StackPanel Margin="10">
+                                <TextBlock x:Name="TextBlockFreeDescription" 
+                                         Text="ℹ️ Free服务使用VPetLLM的免费配置，无需额外设置API Key" 
+                                         Foreground="Blue" Margin="0,0,0,10" TextWrapping="Wrap"/>
+                                <TextBlock x:Name="TextBlockFreeProvider" 
+                                         Text="感谢提供者 QQ：790132463" 
+                                         Foreground="Green" Margin="0,0,0,10" TextWrapping="Wrap"/>
                             </StackPanel>
                         </GroupBox>
                     </StackPanel>

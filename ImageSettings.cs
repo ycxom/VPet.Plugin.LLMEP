@@ -64,7 +64,7 @@ namespace VPet.Plugin.LLMEP
         /// <summary>
         /// 是否启用精确表情包匹配
         /// </summary>
-        public bool UseAccurateImageMatching { get; set; } = false;
+        public bool UseAccurateImageMatching { get; set; } = true;
 
         /// <summary>
         /// 是否启用时间触发模式
@@ -74,7 +74,7 @@ namespace VPet.Plugin.LLMEP
         /// <summary>
         /// 气泡触发模式：true=启用基于概率的气泡触发，false=禁用气泡触发
         /// </summary>
-        public bool UseBubbleTrigger { get; set; } = false;
+        public bool UseBubbleTrigger { get; set; } = true;
 
         /// <summary>
         /// 气泡触发概率：VPet每次说话时显示表情包的概率（百分比，1-100）

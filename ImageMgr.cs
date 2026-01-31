@@ -243,6 +243,13 @@ namespace VPet.Plugin.LLMEP
                                    settings.EnableDIYImages != newSettings.EnableDIYImages;
 
             bool emotionAnalysisChanged = settings.EmotionAnalysis?.EnableLLMEmotionAnalysis != newSettings.EmotionAnalysis?.EnableLLMEmotionAnalysis;
+            
+            // 检查LLM提供商是否改变
+            var oldProvider = settings.EmotionAnalysis?.Provider;
+            var newProvider = newSettings.EmotionAnalysis?.Provider;
+            bool llmProviderChanged = oldProvider != newProvider;
+            
+            LogMessage($"ApplySettings: 旧提供商={oldProvider}, 新提供商={newProvider}, 提供商改变={llmProviderChanged}");
 
             bool timeTriggerChanged = settings.UseTimeTrigger != newSettings.UseTimeTrigger;
             bool bubbleTriggerChanged = settings.UseBubbleTrigger != newSettings.UseBubbleTrigger ||
@@ -257,10 +264,17 @@ namespace VPet.Plugin.LLMEP
                 LoadImgae();
             }
 
-            // 如果情感分析启用状态改变，需要重新配置监听器
-            if (emotionAnalysisChanged)
+            // 如果情感分析启用状态改变或提供商改变，需要重新配置监听器
+            if (emotionAnalysisChanged || llmProviderChanged)
             {
-                LogMessage("情感分析启用状态已更改，重新配置监听器");
+                if (emotionAnalysisChanged)
+                {
+                    LogMessage("情感分析启用状态已更改，重新配置监听器");
+                }
+                if (llmProviderChanged)
+                {
+                    LogMessage($"LLM提供商已更改: {newSettings.EmotionAnalysis?.Provider}，重新初始化情感分析系统");
+                }
                 
                 // 先清理现有的监听器
                 CleanupBubbleTextListener();
@@ -1343,6 +1357,13 @@ namespace VPet.Plugin.LLMEP
                             : config.OllamaModel;
                         LogMessage($"使用Ollama客户端: {ollamaBaseUrl}, 模型: {ollamaModel}");
                         return new OllamaClient(ollamaBaseUrl, ollamaModel, this);
+
+                    case LLMProvider.Free:
+                        string freeModel = string.IsNullOrWhiteSpace(config.FreeModel)
+                            ? "gpt-3.5-turbo"
+                            : config.FreeModel;
+                        LogMessage($"使用Free客户端, 模型: {freeModel}");
+                        return new FreeClient(freeModel, this);
 
                     default:
                         LogMessage($"未知的LLM提供商: {config.Provider}");

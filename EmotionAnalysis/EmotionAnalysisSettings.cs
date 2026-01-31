@@ -7,7 +7,8 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
     {
         OpenAI,
         Gemini,
-        Ollama
+        Ollama,
+        Free
     }
 
     /// <summary>
@@ -16,10 +17,10 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
     public class EmotionAnalysisSettings
     {
         // 功能开关
-        public bool EnableLLMEmotionAnalysis { get; set; } = false;
+        public bool EnableLLMEmotionAnalysis { get; set; } = true;
 
         // LLM提供商
-        public LLMProvider Provider { get; set; } = LLMProvider.OpenAI;
+        public LLMProvider Provider { get; set; } = LLMProvider.Free;
 
         // OpenAI设置
         public string OpenAIApiKey { get; set; } = "";
@@ -36,6 +37,9 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
         // Ollama设置
         public string OllamaBaseUrl { get; set; } = "http://localhost:11434";
         public string OllamaModel { get; set; } = "llama2";
+
+        // Free设置（使用VPetLLM的Free配置）
+        public string FreeModel { get; set; } = "gpt-3.5-turbo";
 
         // 性能设置
         public int MinRequestIntervalMs { get; set; } = 10000; // 10秒
@@ -62,6 +66,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 GeminiEmbeddingModel = this.GeminiEmbeddingModel,
                 OllamaBaseUrl = this.OllamaBaseUrl,
                 OllamaModel = this.OllamaModel,
+                FreeModel = this.FreeModel,
                 MinRequestIntervalMs = this.MinRequestIntervalMs,
                 CacheExpirationHours = this.CacheExpirationHours,
                 MaxCacheSize = this.MaxCacheSize,
@@ -88,6 +93,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                    GeminiEmbeddingModel == other.GeminiEmbeddingModel &&
                    OllamaBaseUrl == other.OllamaBaseUrl &&
                    OllamaModel == other.OllamaModel &&
+                   FreeModel == other.FreeModel &&
                    MinRequestIntervalMs == other.MinRequestIntervalMs &&
                    CacheExpirationHours == other.CacheExpirationHours &&
                    MaxCacheSize == other.MaxCacheSize &&

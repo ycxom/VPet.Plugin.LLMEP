@@ -140,6 +140,9 @@ namespace VPet.Plugin.LLMEP
                     case EmotionAnalysis.LLMProvider.Ollama:
                         ComboBoxLLMProvider.SelectedIndex = 2;
                         break;
+                    case EmotionAnalysis.LLMProvider.Free:
+                        ComboBoxLLMProvider.SelectedIndex = 3;
+                        break;
                     default:
                         ComboBoxLLMProvider.SelectedIndex = 0;
                         break;
@@ -161,6 +164,19 @@ namespace VPet.Plugin.LLMEP
             // 更新UI显示状态
             UpdateTriggerModeUI();
             UpdateLLMProviderUI();
+
+            // 预加载Free配置信息（异步，不阻塞UI）
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    Dispatcher.BeginInvoke(new System.Action(() =>
+                    {
+                        LoadFreeConfigInfo();
+                    }), System.Windows.Threading.DispatcherPriority.Background);
+                }
+                catch { }
+            });
         }
 
         private void UpdateImagePath()
@@ -211,6 +227,38 @@ namespace VPet.Plugin.LLMEP
                 PanelOpenAI.Visibility = providerTag == "openai" ? Visibility.Visible : Visibility.Collapsed;
                 PanelGemini.Visibility = providerTag == "gemini" ? Visibility.Visible : Visibility.Collapsed;
                 PanelOllama.Visibility = providerTag == "ollama" ? Visibility.Visible : Visibility.Collapsed;
+                PanelFree.Visibility = providerTag == "free" ? Visibility.Visible : Visibility.Collapsed;
+
+                // 如果切换到Free提供商，加载Free配置信息
+                if (providerTag == "free")
+                {
+                    LoadFreeConfigInfo();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 加载Free配置信息（描述和提供者）
+        /// </summary>
+        private void LoadFreeConfigInfo()
+        {
+            try
+            {
+                var freeClient = new EmotionAnalysis.LLMClient.FreeClient(imageMgr: imageMgr);
+                
+                if (TextBlockFreeDescription != null)
+                {
+                    TextBlockFreeDescription.Text = "ℹ️ " + freeClient.GetDescription();
+                }
+                
+                if (TextBlockFreeProvider != null)
+                {
+                    TextBlockFreeProvider.Text = freeClient.GetProvider();
+                }
+            }
+            catch (Exception ex)
+            {
+                imageMgr?.LogDebug("ImageSettingWindow", $"加载Free配置信息失败: {ex.Message}");
             }
         }
 
@@ -334,6 +382,9 @@ namespace VPet.Plugin.LLMEP
                         break;
                     case "ollama":
                         settings.EmotionAnalysis.Provider = EmotionAnalysis.LLMProvider.Ollama;
+                        break;
+                    case "free":
+                        settings.EmotionAnalysis.Provider = EmotionAnalysis.LLMProvider.Free;
                         break;
                 }
 
@@ -605,8 +656,8 @@ namespace VPet.Plugin.LLMEP
             Button button,
             string defaultUrl)
         {
-            // 验证 API Key（Ollama 除外）
-            if (provider != LLMProvider.Ollama && string.IsNullOrEmpty(apiKey))
+            // 验证 API Key（Ollama 和 Free 除外）
+            if (provider != LLMProvider.Ollama && provider != LLMProvider.Free && string.IsNullOrEmpty(apiKey))
             {
                 MessageBox.Show("请先输入 API Key", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
@@ -630,6 +681,7 @@ namespace VPet.Plugin.LLMEP
                     LLMProvider.OpenAI => new OpenAIClient(apiKey, baseUrl, imageMgr: imageMgr),
                     LLMProvider.Gemini => new GeminiClient(apiKey, baseUrl, imageMgr: imageMgr),
                     LLMProvider.Ollama => new OllamaClient(baseUrl, imageMgr: imageMgr),
+                    LLMProvider.Free => new FreeClient(imageMgr: imageMgr),
                     _ => throw new NotSupportedException($"不支持的提供商: {provider}")
                 };
 

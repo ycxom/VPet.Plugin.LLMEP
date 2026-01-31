@@ -25,6 +25,7 @@
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
     <PackageReference Include="Panuon.WPF" Version="1.1.3" />
     <PackageReference Include="Panuon.WPF.UI" Version="1.2.4.10" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
   
   <!-- 编译后自动复制 DLL 到 plugin 目录 -->
