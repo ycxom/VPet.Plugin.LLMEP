@@ -49,6 +49,9 @@ namespace VPet.Plugin.LLMEP
             // 加载设置到UI
             LoadSettings();
 
+            // 启动后台异步扫描图片
+            _ = StartBackgroundImageScanAsync();
+
             // 更新图片路径显示
             UpdateImagePath();
 
@@ -784,6 +787,66 @@ namespace VPet.Plugin.LLMEP
             catch (Exception ex)
             {
                 Utils.Logger.Error("LabelManager", $"初始化标签管理器失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 启动后台异步扫描图片
+        /// </summary>
+        private async System.Threading.Tasks.Task StartBackgroundImageScanAsync()
+        {
+            try
+            {
+                Utils.Logger.Debug("LabelManager", "启动后台异步扫描图片...");
+                
+                // 在后台线程执行扫描
+                await System.Threading.Tasks.Task.Run(() =>
+                {
+                    try
+                    {
+                        // 扫描图片
+                        var images = labelManager.ScanImages();
+                        
+                        // 扫描完成后，回到UI线程更新
+                        Dispatcher.BeginInvoke(new System.Action(() =>
+                        {
+                            try
+                            {
+                                scannedImages = images;
+                                UpdateImageTree();
+                                
+                                int totalImages = scannedImages.Values.Sum(list => list.Count);
+                                if (TextBlockStatus != null)
+                                {
+                                    TextBlockStatus.Text = $"后台扫描完成，共 {totalImages} 张图片";
+                                }
+                                
+                                Utils.Logger.Info("LabelManager", $"后台异步扫描完成: {totalImages} 张图片，分布在 {scannedImages.Count} 个目录中");
+                            }
+                            catch (Exception ex)
+                            {
+                                Utils.Logger.Error("LabelManager", $"后台扫描更新UI失败: {ex.Message}");
+                            }
+                        }), System.Windows.Threading.DispatcherPriority.Background);
+                    }
+                    catch (Exception ex)
+                    {
+                        Utils.Logger.Error("LabelManager", $"后台扫描图片失败: {ex.Message}");
+                        
+                        // 回到UI线程显示错误
+                        Dispatcher.BeginInvoke(new System.Action(() =>
+                        {
+                            if (TextBlockStatus != null)
+                            {
+                                TextBlockStatus.Text = "后台扫描失败";
+                            }
+                        }), System.Windows.Threading.DispatcherPriority.Background);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Error("LabelManager", $"启动后台扫描失败: {ex.Message}");
             }
         }
 

@@ -121,14 +121,25 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 // 检查是否使用气泡触发模式
                 if (_settings.UseBubbleTrigger)
                 {
-                    _imageMgr.LogDebug("SpeechCapturer", "气泡触发已启用，通知 ImageMgr 处理气泡概率触发");
-                    // 通知 ImageMgr 处理气泡概率触发
+                    _imageMgr.LogDebug("SpeechCapturer", "气泡触发已启用，进行概率检查");
+                    
+                    // 在入口处进行概率检查，未命中时直接返回，不进行任何处理
+                    if (!_settings.ShouldTriggerBubble())
+                    {
+                        _imageMgr.LogDebug("SpeechCapturer", $"概率未命中 ({_settings.BubbleTriggerProbability}%)，跳过LLM分析和图片显示");
+                        return;
+                    }
+                    
+                    // 概率命中，通知 ImageMgr 显示图片
+                    _imageMgr.LogDebug("SpeechCapturer", $"概率命中 ({_settings.BubbleTriggerProbability}%)，通知 ImageMgr 显示图片");
                     _imageMgr?.HandleBubbleProbabilityFromSpeechCapturer();
                 }
-
-                // 异步处理情感分析（与气泡触发并行工作）
-                _imageMgr.LogDebug("SpeechCapturer", "开始异步处理文本（情感分析模式）");
-                _ = ProcessSpeechAsync(text);
+                else
+                {
+                    // 气泡触发禁用时，直接进行情感分析并显示图片
+                    _imageMgr.LogDebug("SpeechCapturer", "气泡触发已禁用，直接进行情感分析");
+                    _ = ProcessSpeechAsync(text);
+                }
                 
                 _imageMgr.LogDebug("SpeechCapturer", "=== 气泡文本处理启动完成 ===");
             }

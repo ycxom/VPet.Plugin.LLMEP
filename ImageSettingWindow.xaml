@@ -192,53 +192,55 @@
 
                         <!-- 左侧：图片树形列表 -->
                         <GroupBox Grid.Column="0" Header="📁 图片目录" Margin="0,0,10,0">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                 <TreeView x:Name="TreeViewImages" Background="Transparent" BorderThickness="0" SelectedItemChanged="TreeViewImages_SelectedItemChanged"/>
                             </ScrollViewer>
                         </GroupBox>
 
                         <!-- 右侧：图片预览和标签编辑 -->
                         <GroupBox Grid.Column="1" Header="🖼️ 图片详情" Margin="10,0,0,0">
-                            <Grid>
-                                <!-- 空状态显示 -->
-                                <StackPanel x:Name="PanelEmptyState" 
-                                          HorizontalAlignment="Center" 
-                                          VerticalAlignment="Center"
-                                          Visibility="Visible">
-                                    <TextBlock Text="📷" FontSize="48" HorizontalAlignment="Center" Foreground="#CCCCCC" Margin="0,0,0,16"/>
-                                    <TextBlock Text="选择图片开始编辑标签" FontSize="16" HorizontalAlignment="Center" Foreground="#999999"/>
-                                </StackPanel>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <Grid>
+                                    <!-- 空状态显示 -->
+                                    <StackPanel x:Name="PanelEmptyState" 
+                                              HorizontalAlignment="Center" 
+                                              VerticalAlignment="Center"
+                                              Visibility="Visible">
+                                        <TextBlock Text="📷" FontSize="48" HorizontalAlignment="Center" Foreground="#CCCCCC" Margin="0,0,0,16"/>
+                                        <TextBlock Text="选择图片开始编辑标签" FontSize="16" HorizontalAlignment="Center" Foreground="#999999"/>
+                                    </StackPanel>
 
-                                <!-- 图片详情面板 -->
-                                <StackPanel x:Name="PanelImageDetails" Visibility="Collapsed">
-                                    <TextBlock x:Name="TextBlockImageTitle" Text="🖼️ 选择图片查看预览" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
-                                    
-                                    <!-- 图片预览 -->
-                                    <Border Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="1" Padding="8" Margin="0,0,0,10" MaxHeight="200">
-                                        <Image x:Name="ImagePreview" Stretch="Uniform" StretchDirection="DownOnly"/>
-                                    </Border>
+                                    <!-- 图片详情面板 -->
+                                    <StackPanel x:Name="PanelImageDetails" Visibility="Collapsed">
+                                        <TextBlock x:Name="TextBlockImageTitle" Text="🖼️ 选择图片查看预览" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
+                                        
+                                        <!-- 图片预览 -->
+                                        <Border Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="1" Padding="8" Margin="0,0,0,10" MaxHeight="200">
+                                            <Image x:Name="ImagePreview" Stretch="Uniform" StretchDirection="DownOnly"/>
+                                        </Border>
 
-                                    <!-- 图片信息 -->
-                                    <TextBlock x:Name="TextBlockFileName" Text="文件名: " FontSize="12" Foreground="#666666" Margin="0,0,0,4"/>
-                                    <TextBlock x:Name="TextBlockFileSize" Text="大小: " FontSize="12" Foreground="#666666" Margin="0,0,0,10"/>
-                                    
-                                    <!-- 标签编辑区域 -->
-                                    <TextBlock Text="🏷️ 图片标签" FontSize="14" FontWeight="Bold" Margin="0,0,0,5"/>
-                                    <TextBlock Text="用逗号分隔多个标签，如：开心,笑脸,高兴" FontSize="12" Foreground="#999999" Margin="0,0,0,5"/>
-                                    <TextBox x:Name="TextBoxImageTags" Height="60" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextChanged="TextBoxImageTags_TextChanged" Margin="0,0,0,10"/>
-                                    
-                                    <!-- 心情选择 -->
-                                    <TextBlock Text="💭 心情分类" FontSize="14" FontWeight="Bold" Margin="0,0,0,5"/>
-                                    <TextBlock Text="选择此图片对应的心情，未选择时作为泛用表情包" FontSize="12" Foreground="#999999" Margin="0,0,0,5"/>
-                                    <ComboBox x:Name="ComboBoxEmotion" SelectionChanged="ComboBoxEmotion_SelectionChanged">
-                                        <ComboBoxItem Content="泛用 (General)" Tag="general"/>
-                                        <ComboBoxItem Content="开心 (Happy)" Tag="happy"/>
-                                        <ComboBoxItem Content="正常 (Normal)" Tag="normal"/>
-                                        <ComboBoxItem Content="状态不佳 (Poor)" Tag="poor"/>
-                                        <ComboBoxItem Content="生病 (Ill)" Tag="ill"/>
-                                    </ComboBox>
-                                </StackPanel>
-                            </Grid>
+                                        <!-- 图片信息 -->
+                                        <TextBlock x:Name="TextBlockFileName" Text="文件名: " FontSize="12" Foreground="#666666" Margin="0,0,0,4"/>
+                                        <TextBlock x:Name="TextBlockFileSize" Text="大小: " FontSize="12" Foreground="#666666" Margin="0,0,0,10"/>
+                                        
+                                        <!-- 标签编辑区域 -->
+                                        <TextBlock Text="🏷️ 图片标签" FontSize="14" FontWeight="Bold" Margin="0,0,0,5"/>
+                                        <TextBlock Text="用逗号分隔多个标签，如：开心,笑脸,高兴" FontSize="12" Foreground="#999999" Margin="0,0,0,5"/>
+                                        <TextBox x:Name="TextBoxImageTags" Height="60" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextChanged="TextBoxImageTags_TextChanged" Margin="0,0,0,10"/>
+                                        
+                                        <!-- 心情选择 -->
+                                        <TextBlock Text="💭 心情分类" FontSize="14" FontWeight="Bold" Margin="0,0,0,5"/>
+                                        <TextBlock Text="选择此图片对应的心情，未选择时作为泛用表情包" FontSize="12" Foreground="#999999" Margin="0,0,0,5"/>
+                                        <ComboBox x:Name="ComboBoxEmotion" SelectionChanged="ComboBoxEmotion_SelectionChanged">
+                                            <ComboBoxItem Content="泛用 (General)" Tag="general"/>
+                                            <ComboBoxItem Content="开心 (Happy)" Tag="happy"/>
+                                            <ComboBoxItem Content="正常 (Normal)" Tag="normal"/>
+                                            <ComboBoxItem Content="状态不佳 (Poor)" Tag="poor"/>
+                                            <ComboBoxItem Content="生病 (Ill)" Tag="ill"/>
+                                        </ComboBox>
+                                    </StackPanel>
+                                </Grid>
+                            </ScrollViewer>
                         </GroupBox>
                     </Grid>
 

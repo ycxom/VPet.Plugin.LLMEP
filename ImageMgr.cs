@@ -1582,11 +1582,19 @@ namespace VPet.Plugin.LLMEP
                     return;
                 }
 
-                // 处理气泡概率触发（如果启用气泡触发模式）
+                // 处理气泡概率触发（在入口处进行概率检查）
                 if (settings.UseBubbleTrigger)
                 {
-                    LogMessage($"BubbleTextListener: 气泡触发已启用，概率: {settings.BubbleTriggerProbability}%");
-                    await HandleBubbleProbabilityTrigger();
+                    // 入口检查：概率未命中直接跳过，不进入内部处理
+                    if (!settings.ShouldTriggerBubble())
+                    {
+                        LogMessage($"BubbleTextListener: 未命中概率 ({settings.BubbleTriggerProbability}%)，跳过显示");
+                    }
+                    else
+                    {
+                        LogMessage($"BubbleTextListener: 命中概率 ({settings.BubbleTriggerProbability}%)，开始显示");
+                        await HandleBubbleProbabilityTrigger();
+                    }
                 }
                 else
                 {
@@ -1792,55 +1800,33 @@ namespace VPet.Plugin.LLMEP
         }
 
         /// <summary>
-        /// 处理气泡概率触发
+        /// 处理气泡概率触发（内部方法）
+        /// 注意：调用此方法前必须在入口处完成概率检查
         /// </summary>
         private async Task HandleBubbleProbabilityTrigger()
         {
             try
             {
-                if (!settings.IsEnabled)
+                // 显示表情包
+                var currentMode = MW.Core.Save.CalMode();
+                var imageToShow = Return_Image(currentMode);
+
+                if (imageToShow != null)
                 {
-                    LogMessage("气泡概率触发: 插件未启用，跳过处理");
-                    return;
-                }
+                    LogMessage($"气泡概率触发: 显示 {currentMode} 心情表情包");
+                    DisplayImage(imageToShow);
 
-                if (!settings.UseBubbleTrigger)
-                {
-                    LogMessage("气泡概率触发: 气泡触发已禁用，跳过处理");
-                    return;
-                }
-
-                LogMessage($"气泡概率触发: 检查概率 {settings.BubbleTriggerProbability}%");
-
-                if (settings.ShouldTriggerBubble())
-                {
-                    LogMessage("=== 气泡概率触发：命中概率，显示表情包 ===");
-                    
-                    // 显示表情包
-                    var currentMode = MW.Core.Save.CalMode();
-                    var imageToShow = Return_Image(currentMode);
-
-                    if (imageToShow != null)
-                    {
-                        LogMessage($"气泡概率触发: 显示 {currentMode} 心情表情包");
-                        DisplayImage(imageToShow);
-
-                        // 自动隐藏
-                        await Task.Delay(settings.GetDisplayDurationMs());
-                        HideImage();
-                        LogMessage("气泡概率触发: 表情包显示完成");
-                    }
-                    else
-                    {
-                        LogMessage($"气泡概率触发: 未找到 {currentMode} 心情的表情包");
-                    }
-
-                    LogMessage("=== 气泡概率触发周期完成 ===");
+                    // 自动隐藏
+                    await Task.Delay(settings.GetDisplayDurationMs());
+                    HideImage();
+                    LogMessage("气泡概率触发: 表情包显示完成");
                 }
                 else
                 {
-                    LogMessage("气泡概率触发: 未命中概率，跳过显示");
+                    LogMessage($"气泡概率触发: 未找到 {currentMode} 心情的表情包");
                 }
+
+                LogMessage("=== 气泡概率触发周期完成 ===");
             }
             catch (Exception ex)
             {
@@ -1851,12 +1837,33 @@ namespace VPet.Plugin.LLMEP
 
         /// <summary>
         /// 供 SpeechCapturer 调用的气泡概率触发处理方法
+        /// 在入口处进行概率检查，未命中时直接返回，不进入内部处理
         /// </summary>
         public async void HandleBubbleProbabilityFromSpeechCapturer()
         {
             try
             {
-                LogMessage("SpeechCapturer 请求处理气泡概率触发");
+                // 入口检查：插件未启用或直接返回
+                if (!settings.IsEnabled)
+                {
+                    return;
+                }
+
+                // 入口检查：气泡触发未启用直接返回
+                if (!settings.UseBubbleTrigger)
+                {
+                    return;
+                }
+
+                // 入口检查：概率未命中直接返回，不进入内部处理
+                if (!settings.ShouldTriggerBubble())
+                {
+                    LogMessage($"气泡概率触发: 未命中概率 ({settings.BubbleTriggerProbability}%)，跳过显示");
+                    return;
+                }
+
+                // 概率命中，进入处理
+                LogMessage($"气泡概率触发: 命中概率 ({settings.BubbleTriggerProbability}%)，开始显示");
                 await HandleBubbleProbabilityTrigger();
             }
             catch (Exception ex)
