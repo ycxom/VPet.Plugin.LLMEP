@@ -16,7 +16,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
         /// <summary>
         /// 模型ID
         /// </summary>
-        public string Id
+        public new string Id
         {
             get => base.Id;
             set => base.Id = value;
@@ -86,9 +86,9 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 _imageMgr?.LogDebug("OpenAI", "=== OpenAI HTTP 请求结束 ===");
 
                 var response = await _httpClient.PostAsync($"{_baseUrl}/chat/completions", content);
-                
+
                 var responseJson = await response.Content.ReadAsStringAsync();
-                
+
                 // 记录完整的HTTP响应信息
                 _imageMgr?.LogDebug("OpenAI", "=== OpenAI HTTP 响应开始 ===");
                 _imageMgr?.LogDebug("OpenAI", $"状态码: {response.StatusCode}");

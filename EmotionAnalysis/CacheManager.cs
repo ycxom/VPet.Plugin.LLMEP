@@ -5,7 +5,6 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using VPet.Plugin.LLMEP.Utils;
 
 namespace VPet.Plugin.LLMEP.EmotionAnalysis
 {
@@ -144,20 +143,20 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
             if (currentVersion != _lastKnownVersion)
             {
                 Utils.Logger.Info("CacheManager", $"检测到精确匹配模式版本变化: {_lastKnownVersion} -> {currentVersion}，清空所有缓存");
-                
+
                 // 清空内存缓存
                 _memoryCache.Clear();
-                
+
                 // 清空持久化缓存
                 _persistentCache.Clear();
-                
+
                 // 更新版本号
                 _lastKnownVersion = currentVersion;
-                
+
                 // 立即保存空缓存和新版本
                 Save();
                 SaveVersion();
-                
+
                 Utils.Logger.Info("CacheManager", "缓存已清空，版本已更新");
                 return true;
             }

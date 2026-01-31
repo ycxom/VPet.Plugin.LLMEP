@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Text.Json;
 using VPet.Plugin.LLMEP.EmotionAnalysis;
-using VPet.Plugin.LLMEP.Utils;
 
 namespace VPet.Plugin.LLMEP
 {
@@ -87,6 +86,11 @@ namespace VPet.Plugin.LLMEP
         public int AccurateMatchingVersion { get; set; } = 1;
 
         /// <summary>
+        /// 在线网络表情包库设置
+        /// </summary>
+        public OnlineStickerSettings OnlineSticker { get; set; } = new OnlineStickerSettings();
+
+        /// <summary>
         /// 克隆设置对象
         /// </summary>
         public ImageSettings Clone()
@@ -107,7 +111,8 @@ namespace VPet.Plugin.LLMEP
                 UseBubbleTrigger = this.UseBubbleTrigger,
                 BubbleTriggerProbability = this.BubbleTriggerProbability,
                 UseAccurateImageMatching = this.UseAccurateImageMatching,
-                AccurateMatchingVersion = this.AccurateMatchingVersion
+                AccurateMatchingVersion = this.AccurateMatchingVersion,
+                OnlineSticker = this.OnlineSticker?.Clone()
             };
         }
 
@@ -131,7 +136,9 @@ namespace VPet.Plugin.LLMEP
                    UseAccurateImageMatching == other.UseAccurateImageMatching &&
                    AccurateMatchingVersion == other.AccurateMatchingVersion &&
                    (EmotionAnalysis == null && other.EmotionAnalysis == null ||
-                    EmotionAnalysis != null && EmotionAnalysis.Equals(other.EmotionAnalysis));
+                    EmotionAnalysis != null && EmotionAnalysis.Equals(other.EmotionAnalysis)) &&
+                   (OnlineSticker == null && other.OnlineSticker == null ||
+                    OnlineSticker != null && OnlineSticker.Equals(other.OnlineSticker));
         }
 
         /// <summary>
@@ -232,7 +239,7 @@ namespace VPet.Plugin.LLMEP
         /// <returns>是否发生了变化</returns>
         public bool UpdateAccurateMatchingVersionIfChanged(ImageSettings previousSettings)
         {
-            if (previousSettings == null || 
+            if (previousSettings == null ||
                 UseAccurateImageMatching != previousSettings.UseAccurateImageMatching)
             {
                 AccurateMatchingVersion++;

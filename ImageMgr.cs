@@ -9,6 +9,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using VPet.Plugin.LLMEP.EmotionAnalysis;
 using VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient;
+using VPet.Plugin.LLMEP.Services;
 using VPet.Plugin.LLMEP.Utils;
 using VPet_Simulator.Core;
 using VPet_Simulator.Windows.Interface;
@@ -49,6 +50,9 @@ namespace VPet.Plugin.LLMEP
         // 标签图片匹配器
         private LabelImageMatcher labelImageMatcher;
 
+        // 在线表情包管理器
+        private OnlineStickerManager onlineStickerManager;
+
         // 用于版本控制的设置副本
         private ImageSettings previousSettings;
 
@@ -73,11 +77,11 @@ namespace VPet.Plugin.LLMEP
                 string dataPath = GetDataDirectoryPath();
                 string logPath = Path.Combine(dataPath, "VPet.Plugin.LLMEP.log");
                 Utils.Logger.LogFilePath = logPath;
-                
+
                 // 根据设置配置日志系统
                 Utils.Logger.SetLogLevel((LogLevel)settings.LogLevel);
                 Utils.Logger.EnableFileLogging = settings.EnableFileLogging;
-                
+
                 Utils.Logger.Info("Logger", "日志系统初始化完成");
                 Utils.Logger.Debug("Logger", $"日志文件路径: {logPath}");
                 Utils.Logger.Debug("Logger", $"日志等级: {(LogLevel)settings.LogLevel}");
@@ -96,10 +100,10 @@ namespace VPet.Plugin.LLMEP
             {
                 // 初始化日志系统
                 InitializeLogger();
-                
+
                 // 迁移旧的数据文件到新目录
                 MigrateOldDataFiles();
-                
+
                 Utils.Logger.Info("Plugin", "开始加载插件");
 
                 // Create ImageUI
@@ -119,6 +123,9 @@ namespace VPet.Plugin.LLMEP
 
                 // 初始化气泡文本监听器
                 InitializeBubbleTextListener();
+
+                // 初始化在线表情包管理器
+                InitializeOnlineStickerManager();
 
                 // Create and setup timer if enabled (根据插件启用状态和时间触发开关)
                 if (settings.IsEnabled && settings.UseTimeTrigger)
@@ -146,7 +153,7 @@ namespace VPet.Plugin.LLMEP
                         LogMessage("正在创建设置窗口...");
                         winSetting = new ImageSettingWindow(this);
                         LogMessage("设置窗口创建成功");
-                        
+
                         winSetting.Closed += (s, e) => winSetting = null;
 
                         // 设置为主窗口的子窗口
@@ -158,7 +165,7 @@ namespace VPet.Plugin.LLMEP
 
                         winSetting.Show();
                         LogMessage("设置窗口已显示");
-                        
+
                         if (settings.DebugMode)
                             LogMessage("设置窗口已打开");
                     }
@@ -166,12 +173,12 @@ namespace VPet.Plugin.LLMEP
                     {
                         LogMessage($"创建设置窗口失败: {createEx.Message}");
                         LogMessage($"堆栈跟踪: {createEx.StackTrace}");
-                        
+
                         // 显示详细错误信息给用户
                         System.Windows.MessageBox.Show(
-                            $"无法打开设置窗口。\n\n错误信息: {createEx.Message}\n\n堆栈跟踪:\n{createEx.StackTrace}", 
-                            "设置窗口错误", 
-                            System.Windows.MessageBoxButton.OK, 
+                            $"无法打开设置窗口。\n\n错误信息: {createEx.Message}\n\n堆栈跟踪:\n{createEx.StackTrace}",
+                            "设置窗口错误",
+                            System.Windows.MessageBoxButton.OK,
                             System.Windows.MessageBoxImage.Error);
                         return;
                     }
@@ -197,7 +204,7 @@ namespace VPet.Plugin.LLMEP
                 string dataPath = GetDataDirectoryPath();
                 settingsPath = Path.Combine(dataPath, "settings.json");
                 settings = ImageSettings.LoadFromFile(settingsPath);
-                
+
                 // 初始化设置副本用于版本控制
                 previousSettings = settings.Clone();
             }
@@ -243,17 +250,20 @@ namespace VPet.Plugin.LLMEP
                                    settings.EnableDIYImages != newSettings.EnableDIYImages;
 
             bool emotionAnalysisChanged = settings.EmotionAnalysis?.EnableLLMEmotionAnalysis != newSettings.EmotionAnalysis?.EnableLLMEmotionAnalysis;
-            
+
             // 检查LLM提供商是否改变
             var oldProvider = settings.EmotionAnalysis?.Provider;
             var newProvider = newSettings.EmotionAnalysis?.Provider;
             bool llmProviderChanged = oldProvider != newProvider;
-            
+
             LogMessage($"ApplySettings: 旧提供商={oldProvider}, 新提供商={newProvider}, 提供商改变={llmProviderChanged}");
 
             bool timeTriggerChanged = settings.UseTimeTrigger != newSettings.UseTimeTrigger;
             bool bubbleTriggerChanged = settings.UseBubbleTrigger != newSettings.UseBubbleTrigger ||
                                        settings.BubbleTriggerProbability != newSettings.BubbleTriggerProbability;
+
+            // 检查在线表情包设置是否改变
+            bool onlineStickerChanged = !settings.OnlineSticker.Equals(newSettings.OnlineSticker);
 
             settings = newSettings.Clone();
 
@@ -275,11 +285,11 @@ namespace VPet.Plugin.LLMEP
                 {
                     LogMessage($"LLM提供商已更改: {newSettings.EmotionAnalysis?.Provider}，重新初始化情感分析系统");
                 }
-                
+
                 // 先清理现有的监听器
                 CleanupBubbleTextListener();
                 CleanupEmotionAnalysis();
-                
+
                 if (settings.EmotionAnalysis?.EnableLLMEmotionAnalysis == true)
                 {
                     LogMessage("情感分析已启用，初始化LLM情感分析系统");
@@ -304,6 +314,13 @@ namespace VPet.Plugin.LLMEP
             if (bubbleTriggerChanged)
             {
                 LogMessage($"气泡触发设置已更改：{(settings.UseBubbleTrigger ? $"启用（概率: {settings.BubbleTriggerProbability}%）" : "禁用")}");
+            }
+
+            // 如果在线表情包设置改变，更新配置
+            if (onlineStickerChanged)
+            {
+                LogMessage("在线表情包设置已更改，更新配置");
+                UpdateOnlineStickerManager();
             }
 
             // 配置时间触发器（根据插件启用状态和时间触发开关）
@@ -346,6 +363,9 @@ namespace VPet.Plugin.LLMEP
                 // 清理情感分析系统
                 CleanupEmotionAnalysis();
 
+                // 清理在线表情包管理器
+                CleanupOnlineStickerManager();
+
                 // 隐藏图片
                 HideImage();
 
@@ -368,10 +388,10 @@ namespace VPet.Plugin.LLMEP
                 }
 
                 settings.SaveToFile(settingsPath);
-                
+
                 // 更新设置副本
                 previousSettings = settings.Clone();
-                
+
                 LogMessage("设置已保存到文件");
             }
             catch (Exception ex)
@@ -405,14 +425,14 @@ namespace VPet.Plugin.LLMEP
             {
                 string dllPath = LoaddllPath();
                 string dataPath = Path.Combine(dllPath, "plugin", "data");
-                
+
                 // 确保目录存在
                 if (!Directory.Exists(dataPath))
                 {
                     Directory.CreateDirectory(dataPath);
                     Utils.Logger.Info("ImageMgr", $"创建数据目录: {dataPath}");
                 }
-                
+
                 return dataPath;
             }
             catch (Exception ex)
@@ -431,22 +451,22 @@ namespace VPet.Plugin.LLMEP
             {
                 string dllPath = LoaddllPath();
                 string dataPath = GetDataDirectoryPath();
-                
+
                 // 迁移设置文件
                 string oldSettingsPath = Path.Combine(dllPath, "settings.json");
                 string newSettingsPath = Path.Combine(dataPath, "settings.json");
                 MigrateFile(oldSettingsPath, newSettingsPath, "设置文件");
-                
+
                 // 迁移缓存文件
                 string oldCachePath = Path.Combine(dllPath, "emotion_cache.json");
                 string newCachePath = Path.Combine(dataPath, "emotion_cache.json");
                 MigrateFile(oldCachePath, newCachePath, "缓存文件");
-                
+
                 // 迁移缓存版本文件
                 string oldVersionPath = Path.Combine(dllPath, "emotion_cache.version");
                 string newVersionPath = Path.Combine(dataPath, "emotion_cache.version");
                 MigrateFile(oldVersionPath, newVersionPath, "缓存版本文件");
-                
+
                 // 迁移日志文件
                 string oldLogPath = Path.Combine(dllPath, "VPet.Plugin.LLMEP.log");
                 string newLogPath = Path.Combine(dataPath, "VPet.Plugin.LLMEP.log");
@@ -484,7 +504,7 @@ namespace VPet.Plugin.LLMEP
         {
             // 使用新的日志系统
             Utils.Logger.Info("Legacy", message);
-            
+
             // 保持旧的日志收集（向后兼容）
             var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             var logMessage = $"[{timestamp}] {message}";
@@ -720,13 +740,13 @@ namespace VPet.Plugin.LLMEP
                 {
                     string diyPath = Path.Combine(dllpath, "DIY_Expression");
                     LogMessage($"开始加载DIY表情包: {diyPath}");
-                    
+
                     // 传统的心情子文件夹结构（向后兼容）
                     LoadImagesFromDirectory(Path.Combine(diyPath, "Normal"), IGameSave.ModeType.Nomal, supportedFormats);
                     LoadImagesFromDirectory(Path.Combine(diyPath, "Happy"), IGameSave.ModeType.Happy, supportedFormats);
                     LoadImagesFromDirectory(Path.Combine(diyPath, "PoorCondition"), IGameSave.ModeType.PoorCondition, supportedFormats);
                     LoadImagesFromDirectory(Path.Combine(diyPath, "Ill"), IGameSave.ModeType.Ill, supportedFormats);
-                    
+
                     // 新的标签系统：从所有子目录加载图片并根据标签分类
                     LoadImagesWithTagSystem(diyPath, supportedFormats);
                 }
@@ -828,7 +848,7 @@ namespace VPet.Plugin.LLMEP
                 foreach (var directory in directories)
                 {
                     var dirName = Path.GetFileName(directory);
-                    
+
                     // 跳过传统的心情目录（避免重复加载）
                     if (dirName.Equals("Normal", StringComparison.OrdinalIgnoreCase) ||
                         dirName.Equals("Happy", StringComparison.OrdinalIgnoreCase) ||
@@ -857,10 +877,10 @@ namespace VPet.Plugin.LLMEP
                         {
                             // 获取相对路径
                             var relativePath = Path.GetRelativePath(diyPath, filePath).Replace('\\', '/');
-                            
+
                             // 获取图片的心情标签
                             var emotion = labelManager.GetImageEmotion(relativePath);
-                            
+
                             // 根据心情标签确定目标心情类型
                             var modeType = emotion.ToLower() switch
                             {
@@ -884,9 +904,9 @@ namespace VPet.Plugin.LLMEP
                                 imagepath[modeType] = new List<BitmapImage>();
                             }
                             imagepath[modeType].Add(bitmapImage);
-                            
+
                             taggedImagesCount++;
-                            
+
                             if (settings.DebugMode)
                                 LogMessage($"标签系统: {Path.GetFileName(filePath)} -> {emotion} -> {modeType}");
                         }
@@ -934,7 +954,7 @@ namespace VPet.Plugin.LLMEP
                 var selectedImage = imageList[randomIndex];
 
                 LogDebug("ImageMgr", $"随机选择第 {randomIndex + 1} 张表情包");
-                
+
                 // 安全地获取图片路径（避免线程问题）
                 try
                 {
@@ -1098,6 +1118,29 @@ namespace VPet.Plugin.LLMEP
                     return; // Don't restart timer when time trigger is disabled
                 }
 
+                // 优先尝试在线表情包（如果启用且在随机显示中启用）
+                if (settings.OnlineSticker.IsEnabled && settings.OnlineSticker.EnableInRandomDisplay)
+                {
+                    LogDebug("ImageMgr", "定时器触发: 尝试显示在线随机表情包");
+                    bool onlineSuccess = await ShowOnlineRandomStickerAsync();
+                    if (onlineSuccess)
+                    {
+                        LogInfo("ImageMgr", "定时器触发: 在线表情包显示成功");
+                        // Restart timer with new random interval (only if time trigger is still enabled)
+                        if (settings.UseTimeTrigger)
+                        {
+                            SetRandomInterval();
+                            timer?.Start();
+                        }
+                        LogDebug("ImageMgr", "=== 定时器周期完成（在线表情包）===");
+                        return;
+                    }
+                    else
+                    {
+                        LogDebug("ImageMgr", "定时器触发: 在线表情包显示失败，使用本地表情包");
+                    }
+                }
+
                 // Get current pet mood
                 var currentMode = MW.Core.Save.CalMode();
                 LogDebug("ImageMgr", $"当前宠物心情: {currentMode}");
@@ -1162,6 +1205,14 @@ namespace VPet.Plugin.LLMEP
                 };
                 manualTrigger.Click += (s, e) => ShowRandomImageImmediately();
 
+                // Create submenu for online sticker
+                var onlineStickerTrigger = new MenuItem()
+                {
+                    Header = "在线网络表情包库",
+                    HorizontalContentAlignment = HorizontalAlignment.Center
+                };
+                onlineStickerTrigger.Click += async (s, e) => await ShowOnlineRandomStickerAsync();
+
                 // Create submenu for settings
                 var settingsMenu = new MenuItem()
                 {
@@ -1171,6 +1222,7 @@ namespace VPet.Plugin.LLMEP
                 settingsMenu.Click += (s, e) => Setting();
 
                 menuItem.Items.Add(manualTrigger);
+                menuItem.Items.Add(onlineStickerTrigger);
                 menuItem.Items.Add(new Separator());
                 menuItem.Items.Add(settingsMenu);
 
@@ -1188,6 +1240,26 @@ namespace VPet.Plugin.LLMEP
             {
                 LogMessage("=== 手动触发表情包显示 ===");
                 timer?.Stop();
+
+                // 优先尝试在线表情包（如果启用且在随机显示中启用）
+                if (settings.OnlineSticker.IsEnabled && settings.OnlineSticker.EnableInRandomDisplay)
+                {
+                    LogMessage("尝试显示在线随机表情包");
+                    bool onlineSuccess = await ShowOnlineRandomStickerAsync();
+                    if (onlineSuccess)
+                    {
+                        LogMessage("在线随机表情包显示成功");
+                        // 重启定时器
+                        SetRandomInterval();
+                        timer?.Start();
+                        LogMessage("=== 手动显示周期完成（在线表情包）===");
+                        return;
+                    }
+                    else
+                    {
+                        LogMessage("在线随机表情包显示失败，使用本地表情包");
+                    }
+                }
 
                 var currentMode = MW.Core.Save.CalMode();
                 LogMessage($"手动显示: 当前宠物心情: {currentMode}");
@@ -1483,7 +1555,7 @@ namespace VPet.Plugin.LLMEP
                 else
                 {
                     LogMessage($"测试显示失败：{currentMode} 心情没有可用的图片");
-                    
+
                     // 显示详细的表情包库状态
                     LogMessage("测试显示: 当前表情包库状态:");
                     foreach (var kvp in imagepath)
@@ -1503,7 +1575,7 @@ namespace VPet.Plugin.LLMEP
                 {
                     LogMessage("测试显示: 插件未启用，定时器保持停止状态");
                 }
-                
+
                 LogMessage("=== 测试显示完成 ===");
             }
             catch (Exception ex)
@@ -1563,7 +1635,7 @@ namespace VPet.Plugin.LLMEP
             try
             {
                 LogMessage("=== BubbleTextListener 开始处理气泡文本 ===");
-                
+
                 if (string.IsNullOrWhiteSpace(text))
                 {
                     LogMessage("BubbleTextListener: 文本为空或空白，跳过处理");
@@ -1605,7 +1677,7 @@ namespace VPet.Plugin.LLMEP
                 // 使用简单的关键词匹配逻辑（与气泡触发并行工作）
                 LogMessage("BubbleTextListener: 使用简单关键词匹配处理");
                 await ProcessTextWithSimpleMatching(text);
-                
+
                 LogMessage("=== BubbleTextListener 气泡文本处理完成 ===");
             }
             catch (Exception ex)
@@ -1623,13 +1695,13 @@ namespace VPet.Plugin.LLMEP
             try
             {
                 LogMessage("--- 开始简单关键词匹配处理 ---");
-                
+
                 // 简单的关键词匹配示例
                 // 可以根据需要扩展更复杂的匹配逻辑
 
                 IGameSave.ModeType currentMode = MW.Core.Save.CalMode();
                 IGameSave.ModeType targetMode = currentMode; // 默认使用当前心情
-                
+
                 LogMessage($"简单匹配: 当前宠物心情: {currentMode}");
                 LogMessage($"简单匹配: 开始分析文本关键词");
 
@@ -1638,7 +1710,7 @@ namespace VPet.Plugin.LLMEP
                 bool foundKeyword = false;
                 string matchedKeywords = "";
 
-                if (lowerText.Contains("开心") || lowerText.Contains("高兴") || lowerText.Contains("快乐") || 
+                if (lowerText.Contains("开心") || lowerText.Contains("高兴") || lowerText.Contains("快乐") ||
                     lowerText.Contains("哈哈") || lowerText.Contains("嘻嘻"))
                 {
                     targetMode = IGameSave.ModeType.Happy;
@@ -1675,7 +1747,7 @@ namespace VPet.Plugin.LLMEP
                 {
                     LogMessage($"简单匹配: 找到 {targetMode} 心情的表情包，开始显示");
                     LogMessage($"简单匹配: 表情包路径: {imageToShow.UriSource?.ToString() ?? "未知"}");
-                    
+
                     DisplayImage(imageToShow);
                     LogMessage($"简单匹配: 表情包显示成功，将在 {settings.GetDisplayDurationMs()}ms 后自动隐藏");
 
@@ -1687,7 +1759,7 @@ namespace VPet.Plugin.LLMEP
                 else
                 {
                     LogMessage($"简单匹配: 未找到 {targetMode} 心情的表情包");
-                    
+
                     // 统计各心情的表情包数量
                     LogMessage("简单匹配: 当前表情包库状态:");
                     foreach (var kvp in imagepath)
@@ -1695,7 +1767,7 @@ namespace VPet.Plugin.LLMEP
                         LogMessage($"  - {kvp.Key}: {kvp.Value?.Count ?? 0} 张");
                     }
                 }
-                
+
                 LogMessage("--- 简单关键词匹配处理完成 ---");
             }
             catch (Exception ex)
@@ -1807,7 +1879,24 @@ namespace VPet.Plugin.LLMEP
         {
             try
             {
-                // 显示表情包
+                // 优先尝试在线表情包（如果启用且在气泡触发中启用）
+                if (settings.OnlineSticker.IsEnabled && settings.OnlineSticker.EnableInBubbleTrigger)
+                {
+                    LogMessage("气泡概率触发: 尝试显示在线随机表情包");
+                    bool onlineSuccess = await ShowOnlineRandomStickerAsync();
+                    if (onlineSuccess)
+                    {
+                        LogMessage("气泡概率触发: 在线表情包显示成功");
+                        LogMessage("=== 气泡概率触发周期完成（在线表情包）===");
+                        return;
+                    }
+                    else
+                    {
+                        LogMessage("气泡概率触发: 在线表情包显示失败，使用本地表情包");
+                    }
+                }
+
+                // 显示本地表情包
                 var currentMode = MW.Core.Save.CalMode();
                 var imageToShow = Return_Image(currentMode);
 
@@ -1904,18 +1993,18 @@ namespace VPet.Plugin.LLMEP
             try
             {
                 string dllPath = LoaddllPath();
-                
+
                 // 先在内置表情包目录查找
                 string builtInPath = Path.Combine(dllPath, "VPet_Expression", filename);
                 if (File.Exists(builtInPath))
                 {
                     return builtInPath;
                 }
-                
+
                 // 再在DIY表情包目录查找
                 string diyPath = Path.Combine(dllPath, "DIY_Expression");
                 var moodFolders = new[] { "Happy", "Nomal", "PoorCondition", "Ill" };
-                
+
                 foreach (var mood in moodFolders)
                 {
                     string moodPath = Path.Combine(diyPath, mood, filename);
@@ -1924,13 +2013,215 @@ namespace VPet.Plugin.LLMEP
                         return moodPath;
                     }
                 }
-                
+
                 return null;
             }
             catch (Exception ex)
             {
                 Utils.Logger.Error("ImageMgr", $"获取图片路径失败: {ex.Message}");
                 return null;
+            }
+        }
+
+        /// <summary>
+        /// 初始化在线表情包管理器
+        /// </summary>
+        private void InitializeOnlineStickerManager()
+        {
+            try
+            {
+                LogMessage("开始初始化在线表情包管理器");
+
+                // 创建在线表情包管理器
+                onlineStickerManager = new OnlineStickerManager(this, MW);
+
+                // 应用当前设置
+                UpdateOnlineStickerManager();
+
+                LogMessage("在线表情包管理器初始化完成");
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"初始化在线表情包管理器失败: {ex.Message}");
+                LogMessage($"堆栈跟踪: {ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// 更新在线表情包管理器配置
+        /// </summary>
+        private void UpdateOnlineStickerManager()
+        {
+            try
+            {
+                if (onlineStickerManager == null)
+                {
+                    LogMessage("在线表情包管理器未初始化，跳过配置更新");
+                    return;
+                }
+
+                var onlineSettings = settings.OnlineSticker;
+                onlineStickerManager.UpdateConfiguration(
+                    onlineSettings.IsEnabled,
+                    onlineSettings.UseBuiltInCredentials,
+                    onlineSettings.ServiceUrl,
+                    onlineSettings.ApiKey,
+                    onlineSettings.TagCount,
+                    onlineSettings.CacheDurationMinutes,
+                    onlineSettings.DisplayDurationSeconds
+                );
+
+                LogMessage($"在线表情包管理器配置已更新: 启用={onlineSettings.IsEnabled}");
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"更新在线表情包管理器配置失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 清理在线表情包管理器
+        /// </summary>
+        private void CleanupOnlineStickerManager()
+        {
+            try
+            {
+                if (onlineStickerManager != null)
+                {
+                    onlineStickerManager.Dispose();
+                    onlineStickerManager = null;
+                    LogMessage("在线表情包管理器已清理");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"清理在线表情包管理器失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 获取在线表情包管理器（供其他组件调用）
+        /// </summary>
+        public OnlineStickerManager GetOnlineStickerManager()
+        {
+            return onlineStickerManager;
+        }
+
+        /// <summary>
+        /// 测试在线表情包连接
+        /// </summary>
+        public async Task<bool> TestOnlineStickerConnectionAsync()
+        {
+            try
+            {
+                if (onlineStickerManager == null)
+                {
+                    LogMessage("在线表情包管理器未初始化");
+                    return false;
+                }
+
+                LogMessage("开始测试在线表情包连接");
+                bool result = await onlineStickerManager.TestConnectionAsync();
+
+                if (result)
+                {
+                    LogMessage("在线表情包连接测试成功");
+                }
+                else
+                {
+                    LogMessage("在线表情包连接测试失败");
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"测试在线表情包连接时出现异常: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 显示在线随机表情包
+        /// </summary>
+        public async Task<bool> ShowOnlineRandomStickerAsync()
+        {
+            try
+            {
+                if (onlineStickerManager == null || !settings.OnlineSticker.IsEnabled)
+                {
+                    LogMessage("在线表情包功能未启用或管理器未初始化");
+                    return false;
+                }
+
+                LogMessage("开始显示在线随机表情包");
+                bool result = await onlineStickerManager.DisplayRandomStickerAsync();
+
+                if (result)
+                {
+                    LogMessage("在线随机表情包显示成功");
+                }
+                else
+                {
+                    LogMessage("在线随机表情包显示失败");
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"显示在线随机表情包时出现异常: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 根据情感显示在线表情包
+        /// </summary>
+        public async Task<bool> ShowOnlineStickerByEmotionAsync(string emotion, List<string> additionalTags = null)
+        {
+            try
+            {
+                if (onlineStickerManager == null || !settings.OnlineSticker.IsEnabled)
+                {
+                    return false;
+                }
+
+                LogMessage($"根据情感显示在线表情包: {emotion}");
+                bool result = await onlineStickerManager.SearchAndDisplayStickerAsync(emotion, additionalTags);
+
+                if (result)
+                {
+                    LogMessage($"在线表情包显示成功: {emotion}");
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"根据情感显示在线表情包时出现异常: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 获取在线表情包的系统提示词补充
+        /// </summary>
+        public async Task<string> GetOnlineStickerSystemPromptAsync()
+        {
+            try
+            {
+                if (onlineStickerManager == null || !settings.OnlineSticker.IsEnabled)
+                {
+                    return string.Empty;
+                }
+
+                return await onlineStickerManager.GetSystemPromptAdditionAsync();
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"获取在线表情包系统提示词失败: {ex.Message}");
+                return string.Empty;
             }
         }
 
@@ -1946,7 +2237,7 @@ namespace VPet.Plugin.LLMEP
                 bitmapImage.UriSource = new Uri(imagePath, UriKind.Absolute);
                 bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
                 bitmapImage.EndInit();
-                
+
                 Utils.Logger.Debug("ImageMgr", $"图片加载成功: {imagePath}");
                 return bitmapImage;
             }

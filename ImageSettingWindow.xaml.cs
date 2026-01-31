@@ -6,7 +6,6 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using System.Windows.Threading;
 using VPet.Plugin.LLMEP.EmotionAnalysis;
 using VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient;
@@ -22,7 +21,7 @@ namespace VPet.Plugin.LLMEP
         private ImageSettings settings;
         private ImageSettings originalSettings;
         private DispatcherTimer logUpdateTimer;
-        
+
         // 标签管理相关
         private LabelManager labelManager;
         private Dictionary<string, List<ImageInfo>> scannedImages;
@@ -31,7 +30,7 @@ namespace VPet.Plugin.LLMEP
         public ImageSettingWindow(ImageMgr imageMgr)
         {
             InitializeComponent();
-            
+
             this.imageMgr = imageMgr;
             this.settings = imageMgr.Settings?.Clone() ?? new ImageSettings();
             this.originalSettings = imageMgr.Settings?.Clone() ?? new ImageSettings();
@@ -74,7 +73,7 @@ namespace VPet.Plugin.LLMEP
             try
             {
                 if (TextBoxLog == null) return;
-                
+
                 // 使用静态日志系统，根据设置的日志等级获取日志
                 var minLevel = (VPet.Plugin.LLMEP.Utils.LogLevel)settings.LogLevel;
                 var logs = imageMgr.GetLogMessages(minLevel);
@@ -109,13 +108,13 @@ namespace VPet.Plugin.LLMEP
             CheckBoxEnabled.IsChecked = settings.IsEnabled;
             CheckBoxBuiltInImages.IsChecked = settings.EnableBuiltInImages;
             CheckBoxDIYImages.IsChecked = settings.EnableDIYImages;
-            
+
             // 时间触发设置
             CheckBoxTimeTrigger.IsChecked = settings.UseTimeTrigger;
             SliderDisplayDuration.Value = settings.DisplayDuration;
             SliderDisplayInterval.Value = settings.DisplayInterval;
             CheckBoxRandomInterval.IsChecked = settings.UseRandomInterval;
-            
+
             // 气泡触发设置
             CheckBoxBubbleTrigger.IsChecked = settings.UseBubbleTrigger;
             SliderBubbleTriggerProbability.Value = settings.BubbleTriggerProbability;
@@ -164,9 +163,26 @@ namespace VPet.Plugin.LLMEP
                 ComboBoxOllamaModel.Text = settings.EmotionAnalysis.OllamaModel ?? "llama2";
             }
 
+            // 加载在线表情包设置
+            if (settings.OnlineSticker != null)
+            {
+                CheckBoxOnlineSticker.IsChecked = settings.OnlineSticker.IsEnabled;
+                CheckBoxUseBuiltInCredentials.IsChecked = settings.OnlineSticker.UseBuiltInCredentials;
+                TextBoxOnlineServiceUrl.Text = settings.OnlineSticker.ServiceUrl ?? "";
+                TextBoxOnlineApiKey.Text = settings.OnlineSticker.ApiKey ?? "";
+                SliderOnlineDisplayDuration.Value = settings.OnlineSticker.DisplayDurationSeconds;
+                SliderOnlineTagCount.Value = settings.OnlineSticker.TagCount;
+                SliderOnlineCacheDuration.Value = settings.OnlineSticker.CacheDurationMinutes;
+                CheckBoxOnlinePreferOnline.IsChecked = settings.OnlineSticker.PreferOnlineStickers;
+                CheckBoxOnlineInEmotion.IsChecked = settings.OnlineSticker.EnableInEmotionAnalysis;
+                CheckBoxOnlineInRandom.IsChecked = settings.OnlineSticker.EnableInRandomDisplay;
+                CheckBoxOnlineInBubble.IsChecked = settings.OnlineSticker.EnableInBubbleTrigger;
+            }
+
             // 更新UI显示状态
             UpdateTriggerModeUI();
             UpdateLLMProviderUI();
+            UpdateOnlineStickerUI();
 
             // 预加载Free配置信息（异步，不阻塞UI）
             System.Threading.Tasks.Task.Run(() =>
@@ -207,14 +223,74 @@ namespace VPet.Plugin.LLMEP
             // 根据开关状态调整设置区域的可见性和可用性
             bool useTimeTrigger = CheckBoxTimeTrigger.IsChecked == true;
             bool useBubbleTrigger = CheckBoxBubbleTrigger.IsChecked == true;
-            
+
             // 时间触发设置区域
             TimeTriggerSettings.IsEnabled = useTimeTrigger;
             TimeTriggerSettings.Opacity = useTimeTrigger ? 1.0 : 0.5;
-            
+
             // 气泡触发设置区域
             BubbleTriggerSettings.IsEnabled = useBubbleTrigger;
             BubbleTriggerSettings.Opacity = useBubbleTrigger ? 1.0 : 0.5;
+        }
+
+        /// <summary>
+        /// 更新在线表情包UI显示状态
+        /// </summary>
+        private void UpdateOnlineStickerUI()
+        {
+            try
+            {
+                bool isOnlineEnabled = settings?.OnlineSticker?.IsEnabled == true;
+                bool useBuiltInCredentials = settings?.OnlineSticker?.UseBuiltInCredentials == true;
+
+                // 更新主要配置组的启用状态
+                if (GroupBoxOnlineStickerConfig != null)
+                {
+                    GroupBoxOnlineStickerConfig.IsEnabled = isOnlineEnabled;
+                    GroupBoxOnlineStickerConfig.Opacity = isOnlineEnabled ? 1.0 : 0.5;
+                }
+
+                if (GroupBoxOnlineStickerDisplay != null)
+                {
+                    GroupBoxOnlineStickerDisplay.IsEnabled = isOnlineEnabled;
+                    GroupBoxOnlineStickerDisplay.Opacity = isOnlineEnabled ? 1.0 : 0.5;
+                }
+
+                if (GroupBoxOnlineStickerUsage != null)
+                {
+                    GroupBoxOnlineStickerUsage.IsEnabled = isOnlineEnabled;
+                    GroupBoxOnlineStickerUsage.Opacity = isOnlineEnabled ? 1.0 : 0.5;
+                }
+
+                if (GroupBoxOnlineStickerTest != null)
+                {
+                    GroupBoxOnlineStickerTest.IsEnabled = isOnlineEnabled;
+                    GroupBoxOnlineStickerTest.Opacity = isOnlineEnabled ? 1.0 : 0.5;
+                }
+
+                // 更新自定义服务配置的显示状态
+                if (PanelCustomService != null)
+                {
+                    PanelCustomService.Visibility = (isOnlineEnabled && !useBuiltInCredentials) ? Visibility.Visible : Visibility.Collapsed;
+                }
+
+                // 更新状态文本
+                if (TextBlockOnlineStatus != null)
+                {
+                    if (isOnlineEnabled)
+                    {
+                        TextBlockOnlineStatus.Text = useBuiltInCredentials ? "使用内置凭证" : "使用自定义服务";
+                    }
+                    else
+                    {
+                        TextBlockOnlineStatus.Text = "功能已禁用";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"更新在线表情包UI失败: {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -248,12 +324,12 @@ namespace VPet.Plugin.LLMEP
             try
             {
                 var freeClient = new EmotionAnalysis.LLMClient.FreeClient(imageMgr: imageMgr);
-                
+
                 if (TextBlockFreeDescription != null)
                 {
                     TextBlockFreeDescription.Text = "ℹ️ " + freeClient.GetDescription();
                 }
-                
+
                 if (TextBlockFreeProvider != null)
                 {
                     TextBlockFreeProvider.Text = freeClient.GetProvider();
@@ -403,7 +479,7 @@ namespace VPet.Plugin.LLMEP
                 if (int.TryParse(selectedItem.Tag.ToString(), out int logLevel))
                 {
                     settings.LogLevel = logLevel;
-                    
+
                     // 更新静态日志系统
                     Utils.Logger.SetLogLevel((VPet.Plugin.LLMEP.Utils.LogLevel)logLevel);
                 }
@@ -415,9 +491,186 @@ namespace VPet.Plugin.LLMEP
             if (settings != null && sender is CheckBox checkBox)
             {
                 settings.EnableFileLogging = checkBox.IsChecked == true;
-                
+
                 // 更新静态日志系统
                 Utils.Logger.EnableFileLogging = settings.EnableFileLogging;
+            }
+        }
+
+        // 在线表情包设置事件处理
+        private void CheckBoxOnlineSticker_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings?.OnlineSticker != null && sender is CheckBox checkBox)
+            {
+                settings.OnlineSticker.IsEnabled = checkBox.IsChecked == true;
+                UpdateOnlineStickerUI();
+            }
+        }
+
+        private void CheckBoxUseBuiltInCredentials_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings?.OnlineSticker != null && sender is CheckBox checkBox)
+            {
+                settings.OnlineSticker.UseBuiltInCredentials = checkBox.IsChecked == true;
+                UpdateOnlineStickerUI();
+            }
+        }
+
+        private void TextBoxOnlineServiceUrl_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (settings?.OnlineSticker != null && sender is TextBox textBox)
+            {
+                settings.OnlineSticker.ServiceUrl = textBox.Text;
+            }
+        }
+
+        private void TextBoxOnlineApiKey_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (settings?.OnlineSticker != null && sender is TextBox textBox)
+            {
+                settings.OnlineSticker.ApiKey = textBox.Text;
+            }
+        }
+
+        private void SliderOnlineDisplayDuration_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (settings?.OnlineSticker != null && sender is Slider slider)
+            {
+                settings.OnlineSticker.DisplayDurationSeconds = (int)slider.Value;
+            }
+        }
+
+        private void SliderOnlineTagCount_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (settings?.OnlineSticker != null && sender is Slider slider)
+            {
+                settings.OnlineSticker.TagCount = (int)slider.Value;
+            }
+        }
+
+        private void SliderOnlineCacheDuration_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (settings?.OnlineSticker != null && sender is Slider slider)
+            {
+                settings.OnlineSticker.CacheDurationMinutes = (int)slider.Value;
+            }
+        }
+
+        private void CheckBoxOnlinePreferOnline_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings?.OnlineSticker != null && sender is CheckBox checkBox)
+            {
+                settings.OnlineSticker.PreferOnlineStickers = checkBox.IsChecked == true;
+            }
+        }
+
+        private void CheckBoxOnlineInEmotion_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings?.OnlineSticker != null && sender is CheckBox checkBox)
+            {
+                settings.OnlineSticker.EnableInEmotionAnalysis = checkBox.IsChecked == true;
+            }
+        }
+
+        private void CheckBoxOnlineInRandom_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings?.OnlineSticker != null && sender is CheckBox checkBox)
+            {
+                settings.OnlineSticker.EnableInRandomDisplay = checkBox.IsChecked == true;
+            }
+        }
+
+        private void CheckBoxOnlineInBubble_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings?.OnlineSticker != null && sender is CheckBox checkBox)
+            {
+                settings.OnlineSticker.EnableInBubbleTrigger = checkBox.IsChecked == true;
+            }
+        }
+
+        private async void ButtonTestOnlineConnection_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button)
+            {
+                button.IsEnabled = false;
+                string originalContent = button.Content?.ToString();
+                button.Content = "⏳ 测试中...";
+
+                try
+                {
+                    // 先应用当前设置
+                    imageMgr.ApplySettings(settings);
+
+                    // 测试连接
+                    bool result = await imageMgr.TestOnlineStickerConnectionAsync();
+
+                    if (result)
+                    {
+                        if (TextBlockOnlineStatus != null)
+                            TextBlockOnlineStatus.Text = "✅ 连接成功";
+                        MessageBox.Show("在线表情包服务连接成功！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        if (TextBlockOnlineStatus != null)
+                            TextBlockOnlineStatus.Text = "❌ 连接失败";
+                        MessageBox.Show("在线表情包服务连接失败，请检查网络和配置。", "失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (TextBlockOnlineStatus != null)
+                        TextBlockOnlineStatus.Text = "❌ 连接异常";
+                    MessageBox.Show($"测试连接时出现异常：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                finally
+                {
+                    button.IsEnabled = true;
+                    button.Content = originalContent;
+                }
+            }
+        }
+
+        private async void ButtonTestOnlineSticker_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button)
+            {
+                button.IsEnabled = false;
+                string originalContent = button.Content?.ToString();
+                button.Content = "⏳ 测试中...";
+
+                try
+                {
+                    // 先应用当前设置
+                    imageMgr.ApplySettings(settings);
+
+                    // 测试显示在线表情包
+                    bool result = await imageMgr.ShowOnlineRandomStickerAsync();
+
+                    if (result)
+                    {
+                        if (TextBlockOnlineStatus != null)
+                            TextBlockOnlineStatus.Text = "✅ 表情包显示成功";
+                        MessageBox.Show("在线表情包测试成功！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        if (TextBlockOnlineStatus != null)
+                            TextBlockOnlineStatus.Text = "❌ 表情包显示失败";
+                        MessageBox.Show("在线表情包测试失败，请检查服务连接和配置。", "失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (TextBlockOnlineStatus != null)
+                        TextBlockOnlineStatus.Text = "❌ 测试异常";
+                    MessageBox.Show($"测试在线表情包时出现异常：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                finally
+                {
+                    button.IsEnabled = true;
+                    button.Content = originalContent;
+                }
             }
         }
 
@@ -763,8 +1016,6 @@ namespace VPet.Plugin.LLMEP
             }
         }
 
-        #region 标签管理相关方法
-
         /// <summary>
         /// 初始化标签管理器
         /// </summary>
@@ -778,10 +1029,10 @@ namespace VPet.Plugin.LLMEP
                 labelManager.LoadLabels();
                 labelManager.CreateEmptyLabelFileIfNotExists();
                 labelManager.CreateExampleDirectories(); // 创建示例目录结构
-                
+
                 scannedImages = new Dictionary<string, List<ImageInfo>>();
                 currentSelectedImage = null;
-                
+
                 Utils.Logger.Debug("LabelManager", "标签管理器初始化完成");
             }
             catch (Exception ex)
@@ -798,7 +1049,7 @@ namespace VPet.Plugin.LLMEP
             try
             {
                 Utils.Logger.Debug("LabelManager", "启动后台异步扫描图片...");
-                
+
                 // 在后台线程执行扫描
                 await System.Threading.Tasks.Task.Run(() =>
                 {
@@ -806,7 +1057,7 @@ namespace VPet.Plugin.LLMEP
                     {
                         // 扫描图片
                         var images = labelManager.ScanImages();
-                        
+
                         // 扫描完成后，回到UI线程更新
                         Dispatcher.BeginInvoke(new System.Action(() =>
                         {
@@ -814,13 +1065,13 @@ namespace VPet.Plugin.LLMEP
                             {
                                 scannedImages = images;
                                 UpdateImageTree();
-                                
+
                                 int totalImages = scannedImages.Values.Sum(list => list.Count);
                                 if (TextBlockStatus != null)
                                 {
                                     TextBlockStatus.Text = $"后台扫描完成，共 {totalImages} 张图片";
                                 }
-                                
+
                                 Utils.Logger.Info("LabelManager", $"后台异步扫描完成: {totalImages} 张图片，分布在 {scannedImages.Count} 个目录中");
                             }
                             catch (Exception ex)
@@ -832,7 +1083,7 @@ namespace VPet.Plugin.LLMEP
                     catch (Exception ex)
                     {
                         Utils.Logger.Error("LabelManager", $"后台扫描图片失败: {ex.Message}");
-                        
+
                         // 回到UI线程显示错误
                         Dispatcher.BeginInvoke(new System.Action(() =>
                         {
@@ -858,16 +1109,16 @@ namespace VPet.Plugin.LLMEP
             try
             {
                 if (TextBlockStatus != null) TextBlockStatus.Text = "正在扫描图片...";
-                
+
                 // 扫描图片
                 scannedImages = labelManager.ScanImages();
-                
+
                 // 更新UI
                 UpdateImageTree();
-                
+
                 int totalImages = scannedImages.Values.Sum(list => list.Count);
                 if (TextBlockStatus != null) TextBlockStatus.Text = $"扫描完成，找到 {totalImages} 张图片，分布在 {scannedImages.Count} 个目录中";
-                
+
                 Utils.Logger.Info("LabelManager", $"用户扫描图片完成: {totalImages} 张图片");
             }
             catch (Exception ex)
@@ -887,13 +1138,13 @@ namespace VPet.Plugin.LLMEP
             {
                 // 保存当前编辑的标签
                 SaveCurrentImageTags();
-                
+
                 // 保存到文件
                 labelManager.SaveLabels();
-                
+
                 if (TextBlockStatus != null) TextBlockStatus.Text = "标签保存成功";
                 MessageBox.Show("标签已成功保存到文件！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
-                
+
                 Utils.Logger.Info("LabelManager", "用户保存标签成功");
             }
             catch (Exception ex)
@@ -912,7 +1163,7 @@ namespace VPet.Plugin.LLMEP
             if (TreeViewImages == null) return;
 
             TreeViewImages.Items.Clear();
-            
+
             if (scannedImages.Count == 0)
             {
                 return;
@@ -934,10 +1185,10 @@ namespace VPet.Plugin.LLMEP
                         Header = $"🖼️ {image.FileName}",
                         Tag = image
                     };
-                    
+
                     dirItem.Items.Add(imageItem);
                 }
-                
+
                 TreeViewImages.Items.Add(dirItem);
             }
         }
@@ -953,7 +1204,7 @@ namespace VPet.Plugin.LLMEP
                 {
                     // 保存之前选中图片的标签
                     SaveCurrentImageTags();
-                    
+
                     // 显示新选中的图片
                     ShowImageDetails(imageInfo);
                     currentSelectedImage = imageInfo;
@@ -980,7 +1231,7 @@ namespace VPet.Plugin.LLMEP
             {
                 // 更新标题
                 if (TextBlockImageTitle != null) TextBlockImageTitle.Text = $"🖼️ {imageInfo.FileName}";
-                
+
                 // 显示图片预览
                 if (ImagePreview != null)
                 {
@@ -991,11 +1242,11 @@ namespace VPet.Plugin.LLMEP
                     bitmap.EndInit();
                     ImagePreview.Source = bitmap;
                 }
-                
+
                 // 显示文件信息
                 if (TextBlockFileName != null) TextBlockFileName.Text = $"文件名: {imageInfo.FileName}\n路径: {imageInfo.RelativePath}";
                 if (TextBlockFileSize != null) TextBlockFileSize.Text = $"大小: {imageInfo.FormattedSize}";
-                
+
                 // 显示标签
                 if (TextBoxImageTags != null)
                 {
@@ -1004,9 +1255,9 @@ namespace VPet.Plugin.LLMEP
                     var emotionTags = new[] { "general", "happy", "normal", "poor", "ill" };
                     var normalTags = tags.Where(tag => !emotionTags.Contains(tag.ToLower())).ToList();
                     var emotionTag = tags.FirstOrDefault(tag => emotionTags.Contains(tag.ToLower()));
-                    
+
                     TextBoxImageTags.Text = string.Join(", ", normalTags);
-                    
+
                     // 设置心情选择
                     if (ComboBoxEmotion != null)
                     {
@@ -1021,11 +1272,11 @@ namespace VPet.Plugin.LLMEP
                         ComboBoxEmotion.SelectedIndex = selectedIndex;
                     }
                 }
-                
+
                 // 显示详情面板
                 if (PanelImageDetails != null) PanelImageDetails.Visibility = Visibility.Visible;
                 if (PanelEmptyState != null) PanelEmptyState.Visibility = Visibility.Collapsed;
-                
+
                 if (TextBlockStatus != null) TextBlockStatus.Text = $"正在编辑: {imageInfo.FileName}";
             }
             catch (Exception ex)
@@ -1056,7 +1307,7 @@ namespace VPet.Plugin.LLMEP
                 try
                 {
                     var allTags = new List<string>();
-                    
+
                     // 添加普通标签
                     if (TextBoxImageTags != null && !string.IsNullOrEmpty(TextBoxImageTags.Text))
                     {
@@ -1067,7 +1318,7 @@ namespace VPet.Plugin.LLMEP
                                                .ToList();
                         allTags.AddRange(normalTags);
                     }
-                    
+
                     // 添加心情标签
                     if (ComboBoxEmotion != null && ComboBoxEmotion.SelectedItem is ComboBoxItem selectedItem)
                     {
@@ -1077,10 +1328,10 @@ namespace VPet.Plugin.LLMEP
                             allTags.Add(emotionTag);
                         }
                     }
-                    
+
                     labelManager.SetImageTags(currentSelectedImage.RelativePath, allTags);
                     currentSelectedImage.Tags = allTags;
-                    
+
                     Utils.Logger.Debug("LabelManager", $"保存图片标签: {currentSelectedImage.FileName} -> [{string.Join(", ", allTags)}]");
                 }
                 catch (Exception ex)
@@ -1110,8 +1361,6 @@ namespace VPet.Plugin.LLMEP
             // 实时保存标签变化（可选）
             // 这里可以添加防抖逻辑，避免频繁保存
         }
-
-        #endregion
 
         protected override void OnClosed(EventArgs e)
         {

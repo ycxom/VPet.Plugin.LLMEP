@@ -30,7 +30,7 @@ namespace VPet.Plugin.LLMEP
         public Dictionary<string, List<ImageInfo>> ScanImages()
         {
             var result = new Dictionary<string, List<ImageInfo>>();
-            
+
             try
             {
                 if (!Directory.Exists(diyExpressionPath))
@@ -40,19 +40,19 @@ namespace VPet.Plugin.LLMEP
                 }
 
                 var supportedExtensions = new[] { ".png", ".jpg", ".jpeg", ".gif", ".bmp" };
-                
+
                 // 扫描所有子目录
                 var directories = Directory.GetDirectories(diyExpressionPath);
-                
+
                 foreach (var directory in directories)
                 {
                     var dirName = Path.GetFileName(directory);
                     var imageFiles = new List<ImageInfo>();
-                    
+
                     var files = Directory.GetFiles(directory)
                         .Where(f => supportedExtensions.Contains(Path.GetExtension(f).ToLower()))
                         .OrderBy(f => Path.GetFileName(f));
-                    
+
                     foreach (var file in files)
                     {
                         var relativePath = GetRelativePath(file);
@@ -65,23 +65,23 @@ namespace VPet.Plugin.LLMEP
                             Size = new FileInfo(file).Length,
                             Tags = GetImageTags(relativePath)
                         };
-                        
+
                         imageFiles.Add(imageInfo);
                     }
-                    
+
                     if (imageFiles.Count > 0)
                     {
                         result[dirName] = imageFiles;
                     }
                 }
-                
+
                 Logger.Info("LabelManager", $"扫描完成，找到 {result.Values.Sum(list => list.Count)} 张图片，分布在 {result.Count} 个目录中");
             }
             catch (Exception ex)
             {
                 Logger.Error("LabelManager", $"扫描图片时发生错误: {ex.Message}");
             }
-            
+
             return result;
         }
 
@@ -162,7 +162,7 @@ namespace VPet.Plugin.LLMEP
                 {
                     var json = File.ReadAllText(labelFilePath);
                     var loadedLabels = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(json);
-                    
+
                     if (loadedLabels != null)
                     {
                         imageLabels = loadedLabels;
@@ -203,7 +203,7 @@ namespace VPet.Plugin.LLMEP
 
                 var json = JsonSerializer.Serialize(imageLabels, options);
                 File.WriteAllText(labelFilePath, json);
-                
+
                 Logger.Info("LabelManager", $"保存了 {imageLabels.Count} 个图片的标签数据到文件: {labelFilePath}");
             }
             catch (Exception ex)
@@ -218,7 +218,7 @@ namespace VPet.Plugin.LLMEP
         public Dictionary<string, int> GetTagStatistics()
         {
             var tagCounts = new Dictionary<string, int>();
-            
+
             foreach (var imageTags in imageLabels.Values)
             {
                 foreach (var tag in imageTags)
@@ -233,7 +233,7 @@ namespace VPet.Plugin.LLMEP
                     }
                 }
             }
-            
+
             return tagCounts.OrderByDescending(kv => kv.Value)
                            .ToDictionary(kv => kv.Key, kv => kv.Value);
         }
@@ -256,7 +256,7 @@ namespace VPet.Plugin.LLMEP
 
                     var json = JsonSerializer.Serialize(emptyLabels, options);
                     File.WriteAllText(labelFilePath, json);
-                    
+
                     Logger.Info("LabelManager", $"创建空的标签文件: {labelFilePath}");
                 }
             }
@@ -283,7 +283,7 @@ namespace VPet.Plugin.LLMEP
                 var existingFiles = Directory.GetFiles(diyExpressionPath, "*.*", SearchOption.AllDirectories)
                     .Where(f => new[] { ".png", ".jpg", ".jpeg", ".gif", ".bmp" }.Contains(Path.GetExtension(f).ToLower()))
                     .ToArray();
-                
+
                 if (existingDirs.Length > 0 || existingFiles.Length > 0)
                 {
                     return; // 已有内容，不创建示例
@@ -294,7 +294,7 @@ namespace VPet.Plugin.LLMEP
                 if (!Directory.Exists(generalDirPath))
                 {
                     Directory.CreateDirectory(generalDirPath);
-                    
+
                     // 创建说明文件
                     var readmePath = Path.Combine(generalDirPath, "README.txt");
                     var readmeContent = "通用表情包目录\n" +
@@ -306,7 +306,7 @@ namespace VPet.Plugin.LLMEP
                                       "- ill: 生病\n" +
                                       "- general: 泛用（默认）\n\n" +
                                       "如果图片没有设置心情标签，将作为泛用表情包使用。";
-                    
+
                     File.WriteAllText(readmePath, readmeContent);
                     Logger.Info("LabelManager", "创建了通用表情包目录: General");
                 }

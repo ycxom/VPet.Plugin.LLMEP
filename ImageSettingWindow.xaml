@@ -168,6 +168,93 @@
                 </ScrollViewer>
             </TabItem>
 
+            <!-- 在线网络表情包库 Tab -->
+            <TabItem Header="🌐 在线表情包库">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
+                    <StackPanel>
+                        <!-- 在线表情包功能开关 -->
+                        <GroupBox Header="在线网络表情包库" Margin="0,0,0,20">
+                            <StackPanel Margin="10">
+                                <CheckBox x:Name="CheckBoxOnlineSticker" Content="启用在线网络表情包库" Margin="0,5"
+                                        Checked="CheckBoxOnlineSticker_Changed" Unchecked="CheckBoxOnlineSticker_Changed"/>
+                                <TextBlock Text="ℹ️ 在线表情包库提供丰富的网络表情资源，可以根据情感分析结果自动匹配合适的表情包" 
+                                         Foreground="Blue" Margin="0,5,0,0" TextWrapping="Wrap" FontSize="12"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- 服务配置 -->
+                        <GroupBox x:Name="GroupBoxOnlineStickerConfig" Header="服务配置" Margin="0,0,0,20">
+                            <StackPanel Margin="10">
+                                <CheckBox x:Name="CheckBoxUseBuiltInCredentials" Content="使用 VPetLLM 表情包服务器" Margin="0,5"
+                                        Checked="CheckBoxUseBuiltInCredentials_Changed" Unchecked="CheckBoxUseBuiltInCredentials_Changed"/>
+                                <TextBlock Text="使用 VPetLLM 表情包服务" 
+                                         Foreground="Green" Margin="0,5,0,10" TextWrapping="Wrap" FontSize="12"/>
+                                
+                                <!-- 自定义服务配置 -->
+                                <StackPanel x:Name="PanelCustomService" Visibility="Collapsed">
+                                    <TextBlock Text="服务地址:" Margin="0,5,0,2"/>
+                                    <TextBox x:Name="TextBoxOnlineServiceUrl" Margin="0,0,0,10" TextChanged="TextBoxOnlineServiceUrl_TextChanged"/>
+                                    <TextBlock Text="API Key:" Margin="0,5,0,2"/>
+                                    <TextBox x:Name="TextBoxOnlineApiKey" Margin="0,0,0,10" TextChanged="TextBoxOnlineApiKey_TextChanged"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- 显示设置 -->
+                        <GroupBox x:Name="GroupBoxOnlineStickerDisplay" Header="显示设置" Margin="0,0,0,20">
+                            <StackPanel Margin="10">
+                                <StackPanel Orientation="Horizontal" Margin="0,5">
+                                    <TextBlock Text="显示时长:" VerticalAlignment="Center" Width="80"/>
+                                    <Slider x:Name="SliderOnlineDisplayDuration" Width="200" Minimum="1" Maximum="30" Value="6" TickFrequency="1" IsSnapToTickEnabled="True"
+                                          ValueChanged="SliderOnlineDisplayDuration_ValueChanged"/>
+                                    <TextBlock Text="{Binding ElementName=SliderOnlineDisplayDuration, Path=Value, StringFormat={}{0:F0} 秒}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,5">
+                                    <TextBlock Text="标签数量:" VerticalAlignment="Center" Width="80"/>
+                                    <Slider x:Name="SliderOnlineTagCount" Width="200" Minimum="1" Maximum="50" Value="10" TickFrequency="1" IsSnapToTickEnabled="True"
+                                          ValueChanged="SliderOnlineTagCount_ValueChanged"/>
+                                    <TextBlock Text="{Binding ElementName=SliderOnlineTagCount, Path=Value, StringFormat={}{0:F0} 个}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,5">
+                                    <TextBlock Text="缓存时长:" VerticalAlignment="Center" Width="80"/>
+                                    <Slider x:Name="SliderOnlineCacheDuration" Width="200" Minimum="1" Maximum="60" Value="5" TickFrequency="1" IsSnapToTickEnabled="True"
+                                          ValueChanged="SliderOnlineCacheDuration_ValueChanged"/>
+                                    <TextBlock Text="{Binding ElementName=SliderOnlineCacheDuration, Path=Value, StringFormat={}{0:F0} 分钟}" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- 使用场景设置 -->
+                        <GroupBox x:Name="GroupBoxOnlineStickerUsage" Header="使用场景" Margin="0,0,0,20">
+                            <StackPanel Margin="10">
+                                <CheckBox x:Name="CheckBoxOnlinePreferOnline" Content="优先使用在线表情包" Margin="0,5"
+                                        Checked="CheckBoxOnlinePreferOnline_Changed" Unchecked="CheckBoxOnlinePreferOnline_Changed"/>
+                                <TextBlock Text="勾选后将优先使用在线表情包，否则作为本地表情包的补充" 
+                                         Foreground="#666666" Margin="20,0,0,10" TextWrapping="Wrap" FontSize="12"/>
+                                
+                                <CheckBox x:Name="CheckBoxOnlineInEmotion" Content="在情感分析中使用" Margin="0,5"
+                                        Checked="CheckBoxOnlineInEmotion_Changed" Unchecked="CheckBoxOnlineInEmotion_Changed"/>
+                                <CheckBox x:Name="CheckBoxOnlineInRandom" Content="在随机显示中使用" Margin="0,5"
+                                        Checked="CheckBoxOnlineInRandom_Changed" Unchecked="CheckBoxOnlineInRandom_Changed"/>
+                                <CheckBox x:Name="CheckBoxOnlineInBubble" Content="在气泡触发中使用" Margin="0,5"
+                                        Checked="CheckBoxOnlineInBubble_Changed" Unchecked="CheckBoxOnlineInBubble_Changed"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- 连接测试 -->
+                        <GroupBox x:Name="GroupBoxOnlineStickerTest" Header="连接测试" Margin="0,0,0,20">
+                            <StackPanel Margin="10">
+                                <StackPanel Orientation="Horizontal" Margin="0,5">
+                                    <Button x:Name="ButtonTestOnlineConnection" Content="🔗 测试连接" Width="120" Margin="0,0,10,0" Click="ButtonTestOnlineConnection_Click"/>
+                                    <Button x:Name="ButtonTestOnlineSticker" Content="🎭 测试表情包" Width="120" Click="ButtonTestOnlineSticker_Click"/>
+                                </StackPanel>
+                                <TextBlock x:Name="TextBlockOnlineStatus" Text="准备就绪" Margin="0,10,0,0" FontSize="12" Foreground="#666666"/>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <!-- 标签管理 Tab -->
             <TabItem Header="🏷️ 标签管理">
                 <Grid Margin="20">

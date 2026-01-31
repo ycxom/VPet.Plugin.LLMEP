@@ -80,7 +80,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
             try
             {
                 _imageMgr.LogDebug("SpeechCapturer", "=== 开始处理气泡文本 ===");
-                
+
                 // 检查功能是否启用
                 if (_settings?.EmotionAnalysis == null || !_settings.EmotionAnalysis.EnableLLMEmotionAnalysis)
                 {
@@ -122,14 +122,14 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 if (_settings.UseBubbleTrigger)
                 {
                     _imageMgr.LogDebug("SpeechCapturer", "气泡触发已启用，进行概率检查");
-                    
+
                     // 在入口处进行概率检查，未命中时直接返回，不进行任何处理
                     if (!_settings.ShouldTriggerBubble())
                     {
                         _imageMgr.LogDebug("SpeechCapturer", $"概率未命中 ({_settings.BubbleTriggerProbability}%)，跳过LLM分析和图片显示");
                         return;
                     }
-                    
+
                     // 概率命中，通知 ImageMgr 显示图片
                     _imageMgr.LogDebug("SpeechCapturer", $"概率命中 ({_settings.BubbleTriggerProbability}%)，通知 ImageMgr 显示图片");
                     _imageMgr?.HandleBubbleProbabilityFromSpeechCapturer();
@@ -140,7 +140,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                     _imageMgr.LogDebug("SpeechCapturer", "气泡触发已禁用，直接进行情感分析");
                     _ = ProcessSpeechAsync(text);
                 }
-                
+
                 _imageMgr.LogDebug("SpeechCapturer", "=== 气泡文本处理启动完成 ===");
             }
             catch (Exception ex)
@@ -163,7 +163,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 // 使用新的情感分析和图片选择方法
                 _imageMgr.LogDebug("SpeechCapturer", "调用情感分析和图片选择器");
                 await _imageSelector.SelectAndDisplayWithEmotionAnalysisAsync(_emotionAnalyzer, text);
-                
+
                 _imageMgr.LogDebug("SpeechCapturer", "--- 情感分析处理完成 ---");
             }
             catch (Exception ex)

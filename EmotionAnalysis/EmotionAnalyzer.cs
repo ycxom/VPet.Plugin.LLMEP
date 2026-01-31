@@ -65,7 +65,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                     // 新的DIY标签系统
                     string diyLabelPath = Path.Combine(dllPath, "plugin", "data", "diy_labels.json");
                     ExtractTagsFromDIYLabelFile(diyLabelPath, allTags);
-                    
+
                     // 兼容旧的DIY标签系统
                     string oldDiyLabelPath = Path.Combine(dllPath, "DIY_Expression", "label.json");
                     ExtractTagsFromLabelFile(oldDiyLabelPath, allTags);
@@ -274,26 +274,44 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 _imageMgr.LogDebug("EmotionAnalyzer", "=== AnalyzeEmotionAndGetImageAsync 开始 ===");
                 _imageMgr.LogDebug("EmotionAnalyzer", $"接收到文本: {text}");
                 _imageMgr.LogDebug("EmotionAnalyzer", $"精确匹配设置: {_imageMgr.Settings.UseAccurateImageMatching}");
-                
+
+                List<string> emotionTags = null;
+
                 // 如果启用了精确图片匹配，使用标签匹配
                 if (_imageMgr.Settings.UseAccurateImageMatching)
                 {
                     _imageMgr.LogInfo("EmotionAnalyzer", "使用精确标签匹配模式");
-                    
+
                     Utils.Logger.Debug("EmotionAnalyzer", "准备调用 AnalyzeEmotionAsync...");
                     // 获取标签
-                    var tags = await AnalyzeEmotionAsync(text);
+                    emotionTags = await AnalyzeEmotionAsync(text);
                     Utils.Logger.Debug("EmotionAnalyzer", "AnalyzeEmotionAsync 调用完成");
-                    
-                    if (tags != null && tags.Count > 0)
+
+                    if (emotionTags != null && emotionTags.Count > 0)
                     {
-                        Utils.Logger.Info("EmotionAnalyzer", $"情感分析结果: {text} -> [{string.Join(", ", tags)}]");
-                        
+                        Utils.Logger.Info("EmotionAnalyzer", $"情感分析结果: {text} -> [{string.Join(", ", emotionTags)}]");
+
+                        // 优先尝试在线表情包（如果启用且在情感分析中启用）
+                        if (_imageMgr.Settings.OnlineSticker.IsEnabled && _imageMgr.Settings.OnlineSticker.EnableInEmotionAnalysis)
+                        {
+                            Utils.Logger.Debug("EmotionAnalyzer", "尝试使用在线表情包");
+                            var onlineSuccess = await TryUseOnlineStickerAsync(emotionTags);
+                            if (onlineSuccess)
+                            {
+                                Utils.Logger.Info("EmotionAnalyzer", "在线表情包显示成功");
+                                return null; // 在线表情包已经显示，不需要返回本地图片
+                            }
+                            else
+                            {
+                                Utils.Logger.Debug("EmotionAnalyzer", "在线表情包显示失败，继续使用本地表情包");
+                            }
+                        }
+
                         // 使用标签匹配图片
                         var labelMatcher = _imageMgr.GetLabelImageMatcher();
                         if (labelMatcher != null)
                         {
-                            var matchedImage = labelMatcher.MatchImageByTags(tags);
+                            var matchedImage = labelMatcher.MatchImageByTags(emotionTags);
                             if (matchedImage != null)
                             {
                                 Utils.Logger.Debug("EmotionAnalyzer", "标签匹配成功，返回匹配的图片");
@@ -317,24 +335,40 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 else
                 {
                     Utils.Logger.Debug("EmotionAnalyzer", "精确标签匹配未启用，使用向量匹配模式");
-                    
+
                     // 使用LLM分析获取情感标签
                     Utils.Logger.Debug("EmotionAnalyzer", "准备调用 AnalyzeEmotionAsync...");
-                    var emotions = await AnalyzeEmotionAsync(text);
+                    emotionTags = await AnalyzeEmotionAsync(text);
                     Utils.Logger.Debug("EmotionAnalyzer", "AnalyzeEmotionAsync 调用完成");
-                    
-                    if (emotions != null && emotions.Count > 0)
+
+                    if (emotionTags != null && emotionTags.Count > 0)
                     {
-                        Utils.Logger.Info("EmotionAnalyzer", $"情感分析结果: {text} -> [{string.Join(", ", emotions)}]");
-                        
+                        Utils.Logger.Info("EmotionAnalyzer", $"情感分析结果: {text} -> [{string.Join(", ", emotionTags)}]");
+
+                        // 优先尝试在线表情包（如果启用且在情感分析中启用）
+                        if (_imageMgr.Settings.OnlineSticker.IsEnabled && _imageMgr.Settings.OnlineSticker.EnableInEmotionAnalysis)
+                        {
+                            Utils.Logger.Debug("EmotionAnalyzer", "尝试使用在线表情包");
+                            var onlineSuccess = await TryUseOnlineStickerAsync(emotionTags);
+                            if (onlineSuccess)
+                            {
+                                Utils.Logger.Info("EmotionAnalyzer", "在线表情包显示成功");
+                                return null; // 在线表情包已经显示，不需要返回本地图片
+                            }
+                            else
+                            {
+                                Utils.Logger.Debug("EmotionAnalyzer", "在线表情包显示失败，继续使用本地表情包");
+                            }
+                        }
+
                         // 使用向量匹配查找图片
                         var imageSelector = _imageMgr.GetImageSelector();
                         if (imageSelector != null)
                         {
                             Utils.Logger.Debug("EmotionAnalyzer", "开始向量匹配查找图片");
-                            
+
                             // 通过ImageSelector进行向量匹配（但不显示图片，只获取图片）
-                            var matchedImage = await GetImageByVectorMatchingAsync(emotions);
+                            var matchedImage = await GetImageByVectorMatchingAsync(emotionTags);
                             if (matchedImage != null)
                             {
                                 Utils.Logger.Debug("EmotionAnalyzer", "向量匹配成功，返回匹配的图片");
@@ -368,19 +402,65 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
             }
         }
 
+        /// <summary>
+        /// 尝试使用在线表情包
+        /// </summary>
+        private async Task<bool> TryUseOnlineStickerAsync(List<string> emotionTags)
+        {
+            try
+            {
+                if (emotionTags == null || emotionTags.Count == 0)
+                {
+                    return false;
+                }
+
+                var onlineStickerManager = _imageMgr.GetOnlineStickerManager();
+                if (onlineStickerManager == null)
+                {
+                    Utils.Logger.Warning("EmotionAnalyzer", "在线表情包管理器未初始化");
+                    return false;
+                }
+
+                // 使用第一个标签作为主要情感，其余作为附加标签
+                string primaryEmotion = emotionTags[0];
+                var additionalTags = emotionTags.Skip(1).ToList();
+
+                Utils.Logger.Debug("EmotionAnalyzer", $"在线表情包搜索: 主要情感={primaryEmotion}, 附加标签=[{string.Join(", ", additionalTags)}]");
+
+                // 搜索并显示在线表情包
+                bool success = await onlineStickerManager.SearchAndDisplayStickerAsync(primaryEmotion, additionalTags);
+
+                if (success)
+                {
+                    Utils.Logger.Info("EmotionAnalyzer", $"在线表情包显示成功: {primaryEmotion}");
+                }
+                else
+                {
+                    Utils.Logger.Debug("EmotionAnalyzer", $"在线表情包未找到匹配结果: {primaryEmotion}");
+                }
+
+                return success;
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Error("EmotionAnalyzer", $"尝试使用在线表情包失败: {ex.Message}");
+                return false;
+            }
+        }
+
         public async Task<List<string>> AnalyzeEmotionAsync(string text)
         {
             try
             {
                 Utils.Logger.Debug("EmotionAnalyzer", "=== AnalyzeEmotionAsync 开始 ===");
                 Utils.Logger.Debug("EmotionAnalyzer", $"接收到文本: {text}");
-                
+
                 // 检查版本并在需要时清空缓存（在分析前执行，给用户反悔时间）
                 var currentVersion = _imageMgr.Settings.AccurateMatchingVersion;
                 _cacheManager.CheckVersionAndClearIfNeeded(currentVersion);
-                
+
                 Utils.Logger.Debug("EmotionAnalyzer", "检查缓存...");
-                
+
                 // 检查缓存（无论是否启用精确匹配模式）
                 if (_cacheManager.TryGetEmotion(text, out var cachedEmotions))
                 {
@@ -473,7 +553,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
             {
                 var validTags = GetValidTags();
                 var validEmotions = new List<string>();
-                
+
                 foreach (var emotion in emotions)
                 {
                     if (validTags.Contains(emotion, StringComparer.OrdinalIgnoreCase))
@@ -486,13 +566,13 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                         Utils.Logger.Debug("EmotionAnalyzer", $"标签验证: '{emotion}' 不在允许列表中，已忽略");
                     }
                 }
-                
+
                 if (validEmotions.Count == 0)
                 {
                     Utils.Logger.Debug("EmotionAnalyzer", "标签验证: 没有有效标签，使用降级标签 '可爱'");
                     validEmotions.Add("可爱");
                 }
-                
+
                 return validEmotions;
             }
 
@@ -515,16 +595,16 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
 
                 // 使用向量检索获取匹配的图片文件名
                 var matchingImages = await vectorRetriever.FindMatchingImagesAsync(emotions, topK: 3);
-                
+
                 if (matchingImages != null && matchingImages.Count > 0)
                 {
                     Utils.Logger.Debug("EmotionAnalyzer", $"向量匹配找到 {matchingImages.Count} 张候选图片");
-                    
+
                     // 随机选择一张
                     var random = new Random();
                     string selectedFilename = matchingImages[random.Next(matchingImages.Count)];
                     Utils.Logger.Debug("EmotionAnalyzer", $"随机选择图片: {selectedFilename}");
-                    
+
                     // 加载图片
                     var imagePath = _imageMgr.GetImagePath(selectedFilename);
                     if (!string.IsNullOrEmpty(imagePath))
@@ -549,7 +629,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 {
                     Utils.Logger.Debug("EmotionAnalyzer", "向量匹配未找到候选图片");
                 }
-                
+
                 return null;
             }
             catch (Exception ex)

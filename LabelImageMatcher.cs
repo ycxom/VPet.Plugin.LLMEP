@@ -36,7 +36,7 @@ namespace VPet.Plugin.LLMEP
                 _imageCache.Clear();
 
                 string dllPath = _imageMgr.LoaddllPath();
-                
+
                 // 加载内置表情包标签
                 if (_imageMgr.Settings.EnableBuiltInImages)
                 {
@@ -52,7 +52,7 @@ namespace VPet.Plugin.LLMEP
                     string diyLabelPath = Path.Combine(dllPath, "plugin", "data", "diy_labels.json");
                     string diyImagePath = Path.Combine(dllPath, "DIY_Expression");
                     LoadDIYLabelsFromFile(diyLabelPath, diyImagePath);
-                    
+
                     // 兼容旧的标签系统：从 DIY_Expression/label.json 加载
                     string oldDiyLabelPath = Path.Combine(dllPath, "DIY_Expression", "label.json");
                     LoadLabelsFromFile(oldDiyLabelPath, diyImagePath);
@@ -82,7 +82,7 @@ namespace VPet.Plugin.LLMEP
                 _imageMgr.LogDebug("LabelMatcher", $"开始读取标签文件: {labelFilePath}");
                 string jsonContent = File.ReadAllText(labelFilePath);
                 _imageMgr.LogDebug("LabelMatcher", $"标签文件内容长度: {jsonContent.Length} 字符");
-                
+
                 // 显示文件内容的前200个字符用于调试
                 string preview = jsonContent.Length > 200 ? jsonContent.Substring(0, 200) + "..." : jsonContent;
                 _imageMgr.LogDebug("LabelMatcher", $"标签文件内容预览: {preview}");
@@ -95,7 +95,7 @@ namespace VPet.Plugin.LLMEP
                 };
                 var labelData = JsonSerializer.Deserialize<LabelData>(jsonContent, options);
                 _imageMgr.LogDebug("LabelMatcher", $"反序列化完成，labelData 是否为空: {labelData == null}");
-                
+
                 if (labelData != null)
                 {
                     _imageMgr.LogDebug("LabelMatcher", $"labelData.Images 是否为空: {labelData.Images == null}");
@@ -172,7 +172,7 @@ namespace VPet.Plugin.LLMEP
 
                 // DIY标签格式：{ "相对路径": ["标签1", "标签2"] }
                 var diyLabels = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(jsonContent, options);
-                
+
                 if (diyLabels == null)
                 {
                     _imageMgr.LogWarning("LabelMatcher", $"DIY标签文件格式错误: {labelFilePath}");
@@ -190,10 +190,10 @@ namespace VPet.Plugin.LLMEP
 
                     // 从相对路径获取文件名
                     string filename = Path.GetFileName(relativePath);
-                    
+
                     // 构建完整图片路径
                     string fullImagePath = Path.Combine(imageBasePath, relativePath);
-                    
+
                     if (File.Exists(fullImagePath))
                     {
                         // 存储标签信息（使用文件名作为键，保持与内置标签一致）
@@ -211,7 +211,7 @@ namespace VPet.Plugin.LLMEP
 
                             _imageCache[cacheKey] = bitmapImage;
                             loadedCount++;
-                            
+
                             _imageMgr.LogDebug("LabelMatcher", $"加载DIY图片: {relativePath} -> 标签: [{string.Join(", ", tags)}]");
                         }
                         catch (Exception ex)

@@ -114,10 +114,10 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 }
 
                 Utils.Logger.Debug("ImageSelector", "准备调用情感分析器...");
-                
+
                 // 使用情感分析器获取匹配的图片
                 var selectedImage = await emotionAnalyzer.AnalyzeEmotionAndGetImageAsync(text);
-                
+
                 Utils.Logger.Debug("ImageSelector", "情感分析器调用完成");
 
                 if (selectedImage != null)
@@ -128,10 +128,10 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 else
                 {
                     Utils.Logger.Debug("ImageSelector", "情感分析未获得匹配图片，使用降级策略");
-                    
+
                     // 降级：使用当前心情的随机图片
                     selectedImage = _imageMgr.GetCurrentMoodImagePublic();
-                    
+
                     if (selectedImage != null)
                     {
                         Utils.Logger.Debug("ImageSelector", "降级策略成功");
@@ -171,7 +171,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 if (matchingImages != null && matchingImages.Count > 0)
                 {
                     Utils.Logger.Debug("ImageSelector", $"找到 {matchingImages.Count} 张匹配的图片");
-                    
+
                     // 从Top 3中随机选择一张
                     string selectedFilename = matchingImages[_random.Next(matchingImages.Count)];
                     Utils.Logger.Debug("ImageSelector", $"随机选择图片: {selectedFilename}");
@@ -204,10 +204,10 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 if (selectedImage == null)
                 {
                     Utils.Logger.Debug("ImageSelector", "使用降级策略，选择当前心情的随机图片");
-                    
+
                     // 直接调用 ImageMgr 的公共方法获取当前心情的图片
                     selectedImage = _imageMgr.GetCurrentMoodImagePublic();
-                    
+
                     if (selectedImage != null)
                     {
                         Utils.Logger.Debug("ImageSelector", "降级策略成功，获得当前心情图片");
@@ -245,13 +245,13 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
             try
             {
                 Utils.Logger.Debug("ImageSelector", $"开始加载图片: {imagePath}");
-                
+
                 var bitmapImage = new BitmapImage();
                 bitmapImage.BeginInit();
                 bitmapImage.UriSource = new Uri(imagePath, UriKind.Absolute);
                 bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
                 bitmapImage.EndInit();
-                
+
                 Utils.Logger.Debug("ImageSelector", $"图片加载成功，尺寸: {bitmapImage.PixelWidth}x{bitmapImage.PixelHeight}");
                 return bitmapImage;
             }
@@ -270,18 +270,18 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
             try
             {
                 Utils.Logger.Debug("ImageSelector", "开始显示图片");
-                
+
                 // 使用公共方法显示图片
                 _imageMgr.DisplayImagePublic(image);
-                
+
                 Utils.Logger.Debug("ImageSelector", $"图片将显示 {_imageMgr.Settings.GetDisplayDurationMs()}ms");
-                
+
                 // 自动隐藏
                 await Task.Delay(_imageMgr.Settings.GetDisplayDurationMs());
-                
+
                 Utils.Logger.Debug("ImageSelector", "开始隐藏图片");
                 _imageMgr.HideImagePublic();
-                
+
                 Utils.Logger.Debug("ImageSelector", "图片显示周期完成");
             }
             catch (Exception ex)

@@ -1,3 +1,4 @@
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -6,7 +7,6 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Newtonsoft.Json.Linq;
 
 namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
 {
@@ -18,7 +18,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
         /// <summary>
         /// 模型ID
         /// </summary>
-        public string Id
+        public new string Id
         {
             get => base.Id;
             set => base.Id = value;
@@ -80,7 +80,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
             {
                 // 首先尝试初始化配置（如果配置不存在）
                 InitializeConfigIfNeeded();
-                
+
                 var config = GetChatConfig();
                 if (config is not null)
                 {
@@ -125,7 +125,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 {
                     _imageMgr?.LogInfo("FreeClient", "未找到有效的Free配置，尝试初始化配置...");
                     _imageMgr?.LogInfo("FreeClient", "正在后台下载Free配置文件，请稍候...");
-                    
+
                     // 异步初始化配置，但不等待完成（避免阻塞UI）
                     Task.Run(async () =>
                     {
@@ -218,7 +218,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
 
                 // 只初始化Chat配置
                 bool chatOk = await CheckAndUpdateConfigAsync("Free_Chat_Config.json", versionInfo);
-                
+
                 _imageMgr?.LogInfo("FreeClient", $"Free配置初始化完成: {chatOk}");
                 return chatOk;
             }
@@ -263,7 +263,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 // 从版本信息中获取期望的MD5
                 var configKey = configName.Replace(".json", "");
                 _imageMgr?.LogDebug("FreeClient", $"查找配置键: {configKey}");
-                
+
                 var expectedMd5 = versionInfo["vpetllm"]?[configKey]?.ToString();
                 if (string.IsNullOrEmpty(expectedMd5))
                 {
@@ -298,7 +298,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 // 计算下载内容的MD5
                 var actualMd5 = CalculateMD5(configContent);
                 _imageMgr?.LogDebug("FreeClient", $"实际MD5: {actualMd5}");
-                
+
                 if (actualMd5 != expectedMd5)
                 {
                     _imageMgr?.LogWarning("FreeClient", $"MD5校验失败 - 期望:{expectedMd5}, 实际:{actualMd5}");
@@ -310,10 +310,10 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 File.WriteAllText(encryptedPath, encryptedContent);
 
                 _imageMgr?.LogInfo("FreeClient", $"配置更新成功，已保存为: {expectedMd5}");
-                
+
                 // 清理旧的Chat配置文件
                 CleanOldEncryptedFiles(expectedMd5, "Chat", configDirectory);
-                
+
                 return true;
             }
             catch (Exception ex)
@@ -564,7 +564,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
             {
                 var currentCulture = System.Globalization.CultureInfo.CurrentCulture;
                 var languageCode = currentCulture.Name.ToLowerInvariant();
-                
+
                 // 映射到支持的语言代码
                 return languageCode switch
                 {
@@ -593,7 +593,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 {
                     var langCode = GetCurrentLanguageCode();
                     var description = config["Language"]?.Value<JObject>()?["Description"]?.Value<string>(langCode);
-                    return description ?? config["Language"]?.Value<JObject>()?["Description"]?.Value<string>("zh-hans") ?? 
+                    return description ?? config["Language"]?.Value<JObject>()?["Description"]?.Value<string>("zh-hans") ??
                            "Free Chat 使用内置的免费LLM服务，无需配置 API Key。";
                 }
             }
@@ -616,7 +616,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 {
                     var langCode = GetCurrentLanguageCode();
                     var provider = config["Language"]?.Value<JObject>()?["Provider"]?.Value<string>(langCode);
-                    return provider ?? config["Language"]?.Value<JObject>()?["Provider"]?.Value<string>("zh-hans") ?? 
+                    return provider ?? config["Language"]?.Value<JObject>()?["Provider"]?.Value<string>("zh-hans") ??
                            "感谢提供者 QQ：790132463";
                 }
             }

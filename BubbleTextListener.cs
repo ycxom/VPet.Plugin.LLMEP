@@ -1,5 +1,4 @@
 using System;
-using System.Threading.Tasks;
 using VPet_Simulator.Core;
 using VPet_Simulator.Windows.Interface;
 
