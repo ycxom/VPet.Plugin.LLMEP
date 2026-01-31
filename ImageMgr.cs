@@ -7,14 +7,14 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using VPet.Plugin.Image.EmotionAnalysis;
-using VPet.Plugin.Image.EmotionAnalysis.LLMClient;
-using VPet.Plugin.Image.Utils;
+using VPet.Plugin.LLMEP.EmotionAnalysis;
+using VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient;
+using VPet.Plugin.LLMEP.Utils;
 using VPet_Simulator.Core;
 using VPet_Simulator.Windows.Interface;
 using WpfAnimatedGif;
 
-namespace VPet.Plugin.Image
+namespace VPet.Plugin.LLMEP
 {
     public class ImageMgr : MainPlugin
     {
@@ -71,7 +71,7 @@ namespace VPet.Plugin.Image
             try
             {
                 string dataPath = GetDataDirectoryPath();
-                string logPath = Path.Combine(dataPath, "VPet.Plugin.Image.log");
+                string logPath = Path.Combine(dataPath, "VPet.Plugin.LLMEP.log");
                 Utils.Logger.LogFilePath = logPath;
                 
                 // 根据设置配置日志系统
@@ -141,18 +141,40 @@ namespace VPet.Plugin.Image
             {
                 if (winSetting == null || !winSetting.IsLoaded)
                 {
-                    winSetting = new ImageSettingWindow(this);
-                    winSetting.Closed += (s, e) => winSetting = null;
-
-                    // 设置为主窗口的子窗口
-                    if (MW is Window mainWindow)
+                    try
                     {
-                        winSetting.Owner = mainWindow;
-                    }
+                        LogMessage("正在创建设置窗口...");
+                        winSetting = new ImageSettingWindow(this);
+                        LogMessage("设置窗口创建成功");
+                        
+                        winSetting.Closed += (s, e) => winSetting = null;
 
-                    winSetting.Show();
-                    if (settings.DebugMode)
-                        LogMessage("设置窗口已打开");
+                        // 设置为主窗口的子窗口
+                        if (MW is Window mainWindow)
+                        {
+                            winSetting.Owner = mainWindow;
+                            LogMessage("设置窗口Owner已设置");
+                        }
+
+                        winSetting.Show();
+                        LogMessage("设置窗口已显示");
+                        
+                        if (settings.DebugMode)
+                            LogMessage("设置窗口已打开");
+                    }
+                    catch (Exception createEx)
+                    {
+                        LogMessage($"创建设置窗口失败: {createEx.Message}");
+                        LogMessage($"堆栈跟踪: {createEx.StackTrace}");
+                        
+                        // 显示详细错误信息给用户
+                        System.Windows.MessageBox.Show(
+                            $"无法打开设置窗口。\n\n错误信息: {createEx.Message}\n\n堆栈跟踪:\n{createEx.StackTrace}", 
+                            "设置窗口错误", 
+                            System.Windows.MessageBoxButton.OK, 
+                            System.Windows.MessageBoxImage.Error);
+                        return;
+                    }
                 }
                 else
                 {
@@ -164,6 +186,7 @@ namespace VPet.Plugin.Image
             catch (Exception ex)
             {
                 LogMessage($"打开设置窗口失败: {ex.Message}");
+                LogMessage($"外层异常堆栈跟踪: {ex.StackTrace}");
             }
         }
 
@@ -411,8 +434,8 @@ namespace VPet.Plugin.Image
                 MigrateFile(oldVersionPath, newVersionPath, "缓存版本文件");
                 
                 // 迁移日志文件
-                string oldLogPath = Path.Combine(dllPath, "VPet.Plugin.Image.log");
-                string newLogPath = Path.Combine(dataPath, "VPet.Plugin.Image.log");
+                string oldLogPath = Path.Combine(dllPath, "VPet.Plugin.LLMEP.log");
+                string newLogPath = Path.Combine(dataPath, "VPet.Plugin.LLMEP.log");
                 MigrateFile(oldLogPath, newLogPath, "日志文件");
             }
             catch (Exception ex)
@@ -678,15 +701,20 @@ namespace VPet.Plugin.Image
                 }
 
                 // 加载DIY表情包（DIY_Expression）
-                // DIY表情包使用标准的心情子文件夹结构
+                // 支持两种模式：传统的心情子文件夹结构 + 新的标签系统
                 if (settings.EnableDIYImages)
                 {
                     string diyPath = Path.Combine(dllpath, "DIY_Expression");
                     LogMessage($"开始加载DIY表情包: {diyPath}");
+                    
+                    // 传统的心情子文件夹结构（向后兼容）
                     LoadImagesFromDirectory(Path.Combine(diyPath, "Normal"), IGameSave.ModeType.Nomal, supportedFormats);
                     LoadImagesFromDirectory(Path.Combine(diyPath, "Happy"), IGameSave.ModeType.Happy, supportedFormats);
                     LoadImagesFromDirectory(Path.Combine(diyPath, "PoorCondition"), IGameSave.ModeType.PoorCondition, supportedFormats);
                     LoadImagesFromDirectory(Path.Combine(diyPath, "Ill"), IGameSave.ModeType.Ill, supportedFormats);
+                    
+                    // 新的标签系统：从所有子目录加载图片并根据标签分类
+                    LoadImagesWithTagSystem(diyPath, supportedFormats);
                 }
                 else
                 {
@@ -768,6 +796,105 @@ namespace VPet.Plugin.Image
             }
         }
 
+        /// <summary>
+        /// 使用标签系统加载图片
+        /// </summary>
+        private void LoadImagesWithTagSystem(string diyPath, string[] supportedFormats)
+        {
+            try
+            {
+                // 初始化标签管理器
+                var labelManager = new LabelManager(LoaddllPath());
+                labelManager.LoadLabels();
+
+                // 扫描所有子目录中的图片
+                var directories = Directory.GetDirectories(diyPath);
+                int taggedImagesCount = 0;
+
+                foreach (var directory in directories)
+                {
+                    var dirName = Path.GetFileName(directory);
+                    
+                    // 跳过传统的心情目录（避免重复加载）
+                    if (dirName.Equals("Normal", StringComparison.OrdinalIgnoreCase) ||
+                        dirName.Equals("Happy", StringComparison.OrdinalIgnoreCase) ||
+                        dirName.Equals("PoorCondition", StringComparison.OrdinalIgnoreCase) ||
+                        dirName.Equals("Ill", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    var allFiles = new List<string>();
+                    foreach (string format in supportedFormats)
+                    {
+                        try
+                        {
+                            allFiles.AddRange(Directory.GetFiles(directory, format, SearchOption.TopDirectoryOnly));
+                        }
+                        catch
+                        {
+                            // 忽略单个格式搜索的错误
+                        }
+                    }
+
+                    foreach (string filePath in allFiles)
+                    {
+                        try
+                        {
+                            // 获取相对路径
+                            var relativePath = Path.GetRelativePath(diyPath, filePath).Replace('\\', '/');
+                            
+                            // 获取图片的心情标签
+                            var emotion = labelManager.GetImageEmotion(relativePath);
+                            
+                            // 根据心情标签确定目标心情类型
+                            var modeType = emotion.ToLower() switch
+                            {
+                                "happy" => IGameSave.ModeType.Happy,
+                                "normal" => IGameSave.ModeType.Nomal,
+                                "poor" => IGameSave.ModeType.PoorCondition,
+                                "ill" => IGameSave.ModeType.Ill,
+                                _ => IGameSave.ModeType.Nomal // general 或未设置时使用 Normal
+                            };
+
+                            // 加载图片
+                            var bitmapImage = new BitmapImage();
+                            bitmapImage.BeginInit();
+                            bitmapImage.UriSource = new Uri(filePath, UriKind.Absolute);
+                            bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+                            bitmapImage.EndInit();
+
+                            // 添加到对应的心情类别
+                            if (!imagepath.ContainsKey(modeType))
+                            {
+                                imagepath[modeType] = new List<BitmapImage>();
+                            }
+                            imagepath[modeType].Add(bitmapImage);
+                            
+                            taggedImagesCount++;
+                            
+                            if (settings.DebugMode)
+                                LogMessage($"标签系统: {Path.GetFileName(filePath)} -> {emotion} -> {modeType}");
+                        }
+                        catch (Exception ex)
+                        {
+                            if (settings.DebugMode)
+                                LogMessage($"标签系统加载图片失败: {filePath}, 错误: {ex.Message}");
+                        }
+                    }
+                }
+
+                if (taggedImagesCount > 0)
+                {
+                    LogMessage($"标签系统加载完成: {taggedImagesCount} 张图片");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"标签系统加载失败: {ex.Message}");
+            }
+        }
+
         private BitmapImage Return_Image(IGameSave.ModeType type)
         {
             try
@@ -841,6 +968,14 @@ namespace VPet.Plugin.Image
                     return;
                 }
 
+                // 确保在UI线程中执行
+                if (!Application.Current.Dispatcher.CheckAccess())
+                {
+                    LogDebug("ImageMgr", "切换到UI线程显示表情包");
+                    Application.Current.Dispatcher.Invoke(() => DisplayImage(imageToShow));
+                    return;
+                }
+
                 LogDebug("ImageMgr", "开始显示表情包");
                 LogDebug("ImageMgr", $"图片路径: {imageToShow.UriSource?.ToString() ?? "未知"}");
                 LogDebug("ImageMgr", $"图片尺寸: {imageToShow.PixelWidth}x{imageToShow.PixelHeight}");
@@ -881,6 +1016,14 @@ namespace VPet.Plugin.Image
                 if (image?.Image == null)
                 {
                     LogDebug("ImageMgr", "UI组件未初始化，无需隐藏");
+                    return;
+                }
+
+                // 确保在UI线程中执行
+                if (!Application.Current.Dispatcher.CheckAccess())
+                {
+                    LogDebug("ImageMgr", "切换到UI线程隐藏表情包");
+                    Application.Current.Dispatcher.Invoke(() => HideImage());
                     return;
                 }
 

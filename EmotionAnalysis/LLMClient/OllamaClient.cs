@@ -6,7 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace VPet.Plugin.Image.EmotionAnalysis.LLMClient
+namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
 {
     /// <summary>
     /// Ollama 模型信息

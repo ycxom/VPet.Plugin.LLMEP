@@ -4,7 +4,7 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
 
-namespace VPet.Plugin.Image.EmotionAnalysis
+namespace VPet.Plugin.LLMEP.EmotionAnalysis
 {
     /// <summary>
     /// 图片选择器 - 根据情感选择并显示图片

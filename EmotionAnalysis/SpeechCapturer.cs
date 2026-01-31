@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 using VPet_Simulator.Core;
 using VPet_Simulator.Windows.Interface;
 
-namespace VPet.Plugin.Image.EmotionAnalysis
+namespace VPet.Plugin.LLMEP.EmotionAnalysis
 {
     /// <summary>
     /// 语音捕获器 - 捕获VPet的说话内容

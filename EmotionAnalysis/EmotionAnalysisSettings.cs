@@ -1,4 +1,4 @@
-namespace VPet.Plugin.Image.EmotionAnalysis
+namespace VPet.Plugin.LLMEP.EmotionAnalysis
 {
     /// <summary>
     /// LLM提供商枚举

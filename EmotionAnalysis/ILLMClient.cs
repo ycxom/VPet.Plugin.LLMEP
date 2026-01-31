@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace VPet.Plugin.Image.EmotionAnalysis
+namespace VPet.Plugin.LLMEP.EmotionAnalysis
 {
     /// <summary>
     /// 模型信息基类

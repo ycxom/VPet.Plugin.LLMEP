@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 using VPet_Simulator.Core;
 using VPet_Simulator.Windows.Interface;
 
-namespace VPet.Plugin.Image
+namespace VPet.Plugin.LLMEP
 {
     /// <summary>
     /// 气泡文本监听器 - 监听VPet说话内容

@@ -3,13 +3,15 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Threading;
-using VPet.Plugin.Image.EmotionAnalysis;
-using VPet.Plugin.Image.EmotionAnalysis.LLMClient;
+using VPet.Plugin.LLMEP.EmotionAnalysis;
+using VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient;
 
-namespace VPet.Plugin.Image
+namespace VPet.Plugin.LLMEP
 {
     /// <summary>
     /// ImageSettingWindow.xaml 的交互逻辑
@@ -20,30 +22,58 @@ namespace VPet.Plugin.Image
         private ImageSettings settings;
         private ImageSettings originalSettings;
         private DispatcherTimer logUpdateTimer;
+        
+        // 标签管理相关
+        private LabelManager labelManager;
+        private Dictionary<string, List<ImageInfo>> scannedImages;
+        private ImageInfo currentSelectedImage;
 
         public ImageSettingWindow(ImageMgr imageMgr)
         {
             InitializeComponent();
+            
             this.imageMgr = imageMgr;
-            this.settings = imageMgr.Settings.Clone();
-            this.originalSettings = imageMgr.Settings.Clone();
+            this.settings = imageMgr.Settings?.Clone() ?? new ImageSettings();
+            this.originalSettings = imageMgr.Settings?.Clone() ?? new ImageSettings();
 
+            // 初始化标签管理器
+            try
+            {
+                InitializeLabelManager();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"标签管理器初始化失败: {ex.Message}");
+            }
+
+            // 加载设置到UI
             LoadSettings();
+
+            // 更新图片路径显示
             UpdateImagePath();
 
             // 启动日志更新定时器
-            logUpdateTimer = new DispatcherTimer();
-            logUpdateTimer.Interval = TimeSpan.FromSeconds(1);
-            logUpdateTimer.Tick += LogUpdateTimer_Tick;
-            logUpdateTimer.Start();
+            try
+            {
+                logUpdateTimer = new DispatcherTimer();
+                logUpdateTimer.Interval = TimeSpan.FromSeconds(1);
+                logUpdateTimer.Tick += LogUpdateTimer_Tick;
+                logUpdateTimer.Start();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"日志定时器启动失败: {ex.Message}");
+            }
         }
 
         private void LogUpdateTimer_Tick(object sender, EventArgs e)
         {
             try
             {
+                if (TextBoxLog == null) return;
+                
                 // 使用静态日志系统，根据设置的日志等级获取日志
-                var minLevel = (VPet.Plugin.Image.Utils.LogLevel)settings.LogLevel;
+                var minLevel = (VPet.Plugin.LLMEP.Utils.LogLevel)settings.LogLevel;
                 var logs = imageMgr.GetLogMessages(minLevel);
 
                 if (logs.Count > 0)
@@ -52,13 +82,13 @@ namespace VPet.Plugin.Image
                     TextBoxLog.Text = string.Join(Environment.NewLine, logs);
 
                     // 自动滚动到底部
-                    LogScrollViewer.ScrollToEnd();
+                    LogScrollViewer?.ScrollToEnd();
                 }
                 else
                 {
                     if (string.IsNullOrEmpty(TextBoxLog.Text) || TextBoxLog.Text == "日志将显示在这里...")
                     {
-                        var levelName = ((VPet.Plugin.Image.Utils.LogLevel)settings.LogLevel).ToString();
+                        var levelName = ((VPet.Plugin.LLMEP.Utils.LogLevel)settings.LogLevel).ToString();
                         TextBoxLog.Text = $"暂无 {levelName} 级别及以上的日志。\n\n提示：\n- 调整日志等级可以查看更多或更少的日志\n- 开启Debug日志可以查看详细的HTTP请求信息\n- 日志会实时显示在这里";
                     }
                 }
@@ -72,26 +102,31 @@ namespace VPet.Plugin.Image
 
         private void LoadSettings()
         {
-            SwitchEnabled.IsChecked = settings.IsEnabled;
-            SwitchBuiltInImages.IsChecked = settings.EnableBuiltInImages;
-            SwitchDIYImages.IsChecked = settings.EnableDIYImages;
+            // 基本功能开关
+            CheckBoxEnabled.IsChecked = settings.IsEnabled;
+            CheckBoxBuiltInImages.IsChecked = settings.EnableBuiltInImages;
+            CheckBoxDIYImages.IsChecked = settings.EnableDIYImages;
+            
+            // 时间触发设置
+            CheckBoxTimeTrigger.IsChecked = settings.UseTimeTrigger;
             SliderDisplayDuration.Value = settings.DisplayDuration;
             SliderDisplayInterval.Value = settings.DisplayInterval;
-            SwitchRandomInterval.IsChecked = settings.UseRandomInterval;
-            SwitchDebugMode.IsChecked = settings.DebugMode;
-
-            // 加载触发模式设置
-            SwitchTimeTrigger.IsChecked = settings.UseTimeTrigger;
-            SwitchBubbleTrigger.IsChecked = settings.UseBubbleTrigger;
+            CheckBoxRandomInterval.IsChecked = settings.UseRandomInterval;
+            
+            // 气泡触发设置
+            CheckBoxBubbleTrigger.IsChecked = settings.UseBubbleTrigger;
             SliderBubbleTriggerProbability.Value = settings.BubbleTriggerProbability;
 
-            // 更新UI显示状态
-            UpdateTriggerModeUI();
+            // 调试设置
+            CheckBoxDebugMode.IsChecked = settings.DebugMode;
+            ComboBoxLogLevel.SelectedIndex = settings.LogLevel;
+            CheckBoxFileLogging.IsChecked = settings.EnableFileLogging;
 
-            // 加载LLM情感分析设置
+            // LLM情感分析设置
             if (settings.EmotionAnalysis != null)
             {
-                SwitchEmotionAnalysis.IsChecked = settings.EmotionAnalysis.EnableLLMEmotionAnalysis;
+                CheckBoxEmotionAnalysis.IsChecked = settings.EmotionAnalysis.EnableLLMEmotionAnalysis;
+                CheckBoxAccurateImageMatching.IsChecked = settings.UseAccurateImageMatching;
 
                 // 设置提供商
                 switch (settings.EmotionAnalysis.Provider)
@@ -123,107 +158,25 @@ namespace VPet.Plugin.Image
                 ComboBoxOllamaModel.Text = settings.EmotionAnalysis.OllamaModel ?? "llama2";
             }
 
-            // 加载精确图片匹配设置
-            SwitchAccurateImageMatching.IsChecked = settings.UseAccurateImageMatching;
-
-            // 加载日志设置
-            ComboBoxLogLevel.SelectedIndex = settings.LogLevel;
-            SwitchFileLogging.IsChecked = settings.EnableFileLogging;
+            // 更新UI显示状态
+            UpdateTriggerModeUI();
+            UpdateLLMProviderUI();
         }
 
         private void UpdateImagePath()
         {
-            try
+            if (TextBlockImagePath != null)
             {
-                string dllPath = imageMgr.LoaddllPath();
-                string fullPath = Path.Combine(dllPath, "DIY_Expression");
-                TextBlockImagePath.Text = fullPath;
-            }
-            catch
-            {
-                TextBlockImagePath.Text = "DIY_Expression/";
-            }
-        }
-
-        private void SwitchEnabled_Changed(object sender, RoutedEventArgs e)
-        {
-            if (settings != null)
-            {
-                settings.IsEnabled = SwitchEnabled.IsChecked == true;
-            }
-        }
-
-        private void SwitchBuiltInImages_Changed(object sender, RoutedEventArgs e)
-        {
-            if (settings != null)
-            {
-                settings.EnableBuiltInImages = SwitchBuiltInImages.IsChecked == true;
-            }
-        }
-
-        private void SwitchDIYImages_Changed(object sender, RoutedEventArgs e)
-        {
-            if (settings != null)
-            {
-                settings.EnableDIYImages = SwitchDIYImages.IsChecked == true;
-            }
-        }
-
-        private void SliderDisplayDuration_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            if (settings != null)
-            {
-                settings.DisplayDuration = (int)SliderDisplayDuration.Value;
-            }
-        }
-
-        private void SliderDisplayInterval_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            if (settings != null)
-            {
-                settings.DisplayInterval = (int)SliderDisplayInterval.Value;
-            }
-        }
-
-        private void SwitchRandomInterval_Changed(object sender, RoutedEventArgs e)
-        {
-            if (settings != null)
-            {
-                settings.UseRandomInterval = SwitchRandomInterval.IsChecked == true;
-            }
-        }
-
-        private void SwitchDebugMode_Changed(object sender, RoutedEventArgs e)
-        {
-            if (settings != null)
-            {
-                settings.DebugMode = SwitchDebugMode.IsChecked == true;
-            }
-        }
-
-        private void SwitchTimeTrigger_Changed(object sender, RoutedEventArgs e)
-        {
-            if (settings != null)
-            {
-                settings.UseTimeTrigger = SwitchTimeTrigger.IsChecked == true;
-                UpdateTriggerModeUI();
-            }
-        }
-
-        private void SwitchBubbleTrigger_Changed(object sender, RoutedEventArgs e)
-        {
-            if (settings != null)
-            {
-                settings.UseBubbleTrigger = SwitchBubbleTrigger.IsChecked == true;
-                UpdateTriggerModeUI();
-            }
-        }
-
-        private void SliderBubbleTriggerProbability_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            if (settings != null)
-            {
-                settings.BubbleTriggerProbability = (int)SliderBubbleTriggerProbability.Value;
+                try
+                {
+                    string dllPath = imageMgr.LoaddllPath();
+                    string fullPath = Path.Combine(dllPath, "DIY_Expression");
+                    TextBlockImagePath.Text = fullPath;
+                }
+                catch
+                {
+                    TextBlockImagePath.Text = "DIY_Expression/";
+                }
             }
         }
 
@@ -232,22 +185,326 @@ namespace VPet.Plugin.Image
         /// </summary>
         private void UpdateTriggerModeUI()
         {
-            if (TimeTriggerSettings != null && BubbleTriggerSettings != null)
+            // 根据开关状态调整设置区域的可见性和可用性
+            bool useTimeTrigger = CheckBoxTimeTrigger.IsChecked == true;
+            bool useBubbleTrigger = CheckBoxBubbleTrigger.IsChecked == true;
+            
+            // 时间触发设置区域
+            TimeTriggerSettings.IsEnabled = useTimeTrigger;
+            TimeTriggerSettings.Opacity = useTimeTrigger ? 1.0 : 0.5;
+            
+            // 气泡触发设置区域
+            BubbleTriggerSettings.IsEnabled = useBubbleTrigger;
+            BubbleTriggerSettings.Opacity = useBubbleTrigger ? 1.0 : 0.5;
+        }
+
+        /// <summary>
+        /// 更新LLM提供商UI显示状态
+        /// </summary>
+        private void UpdateLLMProviderUI()
+        {
+            if (ComboBoxLLMProvider.SelectedItem is ComboBoxItem selectedItem)
             {
-                // 根据开关状态调整设置区域的可见性和可用性
-                bool useTimeTrigger = SwitchTimeTrigger.IsChecked == true;
-                bool useBubbleTrigger = SwitchBubbleTrigger.IsChecked == true;
-                
-                // 时间触发设置区域
-                TimeTriggerSettings.IsEnabled = useTimeTrigger;
-                TimeTriggerSettings.Opacity = useTimeTrigger ? 1.0 : 0.5;
-                
-                // 气泡触发设置区域
-                BubbleTriggerSettings.IsEnabled = useBubbleTrigger;
-                BubbleTriggerSettings.Opacity = useBubbleTrigger ? 1.0 : 0.5;
+                string providerTag = selectedItem.Tag?.ToString()?.ToLowerInvariant() ?? "openai";
+
+                // 根据选择的提供商显示对应的配置面板
+                PanelOpenAI.Visibility = providerTag == "openai" ? Visibility.Visible : Visibility.Collapsed;
+                PanelGemini.Visibility = providerTag == "gemini" ? Visibility.Visible : Visibility.Collapsed;
+                PanelOllama.Visibility = providerTag == "ollama" ? Visibility.Visible : Visibility.Collapsed;
             }
         }
 
+        // 基本设置事件处理
+        private void CheckBoxEnabled_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings != null && sender is CheckBox checkBox)
+            {
+                settings.IsEnabled = checkBox.IsChecked == true;
+            }
+        }
+
+        private void CheckBoxBuiltInImages_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings != null && sender is CheckBox checkBox)
+            {
+                settings.EnableBuiltInImages = checkBox.IsChecked == true;
+            }
+        }
+
+        private void CheckBoxDIYImages_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings != null && sender is CheckBox checkBox)
+            {
+                settings.EnableDIYImages = checkBox.IsChecked == true;
+            }
+        }
+
+        private void CheckBoxTimeTrigger_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings != null && sender is CheckBox checkBox)
+            {
+                settings.UseTimeTrigger = checkBox.IsChecked == true;
+                UpdateTriggerModeUI();
+            }
+        }
+
+        private void CheckBoxBubbleTrigger_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings != null && sender is CheckBox checkBox)
+            {
+                settings.UseBubbleTrigger = checkBox.IsChecked == true;
+                UpdateTriggerModeUI();
+            }
+        }
+
+        private void SliderDisplayDuration_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (settings != null && sender is Slider slider)
+            {
+                settings.DisplayDuration = (int)slider.Value;
+            }
+        }
+
+        private void SliderDisplayInterval_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (settings != null && sender is Slider slider)
+            {
+                settings.DisplayInterval = (int)slider.Value;
+            }
+        }
+
+        private void CheckBoxRandomInterval_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings != null && sender is CheckBox checkBox)
+            {
+                settings.UseRandomInterval = checkBox.IsChecked == true;
+            }
+        }
+
+        private void SliderBubbleTriggerProbability_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (settings != null && sender is Slider slider)
+            {
+                settings.BubbleTriggerProbability = (int)slider.Value;
+            }
+        }
+
+        private void CheckBoxDebugMode_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings != null && sender is CheckBox checkBox)
+            {
+                settings.DebugMode = checkBox.IsChecked == true;
+            }
+        }
+
+        private void CheckBoxEmotionAnalysis_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings?.EmotionAnalysis != null && sender is CheckBox checkBox)
+            {
+                settings.EmotionAnalysis.EnableLLMEmotionAnalysis = checkBox.IsChecked == true;
+            }
+        }
+
+        private void CheckBoxAccurateImageMatching_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings != null && sender is CheckBox checkBox)
+            {
+                settings.UseAccurateImageMatching = checkBox.IsChecked == true;
+            }
+        }
+
+        private void ComboBoxLLMProvider_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (settings?.EmotionAnalysis == null || !(sender is ComboBox comboBox) || comboBox.SelectedItem == null)
+                return;
+
+            var selectedItem = comboBox.SelectedItem as ComboBoxItem;
+            if (selectedItem != null)
+            {
+                string providerTag = selectedItem.Tag?.ToString()?.ToLowerInvariant() ?? "openai";
+
+                // 转换为枚举
+                switch (providerTag)
+                {
+                    case "openai":
+                        settings.EmotionAnalysis.Provider = EmotionAnalysis.LLMProvider.OpenAI;
+                        break;
+                    case "gemini":
+                        settings.EmotionAnalysis.Provider = EmotionAnalysis.LLMProvider.Gemini;
+                        break;
+                    case "ollama":
+                        settings.EmotionAnalysis.Provider = EmotionAnalysis.LLMProvider.Ollama;
+                        break;
+                }
+
+                UpdateLLMProviderUI();
+            }
+        }
+
+        // 日志等级控制事件处理
+        private void ComboBoxLogLevel_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (settings != null && sender is ComboBox comboBox && comboBox.SelectedItem is ComboBoxItem selectedItem)
+            {
+                if (int.TryParse(selectedItem.Tag.ToString(), out int logLevel))
+                {
+                    settings.LogLevel = logLevel;
+                    
+                    // 更新静态日志系统
+                    Utils.Logger.SetLogLevel((VPet.Plugin.LLMEP.Utils.LogLevel)logLevel);
+                }
+            }
+        }
+
+        private void SwitchFileLogging_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings != null && sender is CheckBox checkBox)
+            {
+                settings.EnableFileLogging = checkBox.IsChecked == true;
+                
+                // 更新静态日志系统
+                Utils.Logger.EnableFileLogging = settings.EnableFileLogging;
+            }
+        }
+
+        // LLM配置事件处理
+        private void TextBoxOpenAIKey_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (settings?.EmotionAnalysis != null && sender is TextBox textBox)
+            {
+                settings.EmotionAnalysis.OpenAIApiKey = textBox.Text;
+            }
+        }
+
+        private void TextBoxOpenAIBaseUrl_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (settings?.EmotionAnalysis != null && sender is TextBox textBox)
+            {
+                settings.EmotionAnalysis.OpenAIBaseUrl = textBox.Text;
+            }
+        }
+
+        private void ComboBoxOpenAIModel_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (settings?.EmotionAnalysis != null && sender is ComboBox comboBox && comboBox.SelectedItem != null)
+            {
+                var selectedItem = comboBox.SelectedItem as ComboBoxItem;
+                if (selectedItem != null)
+                {
+                    settings.EmotionAnalysis.OpenAIModel = selectedItem.Content?.ToString();
+                }
+            }
+        }
+
+        private void ComboBoxOpenAIModel_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (settings?.EmotionAnalysis != null && sender is ComboBox comboBox)
+            {
+                settings.EmotionAnalysis.OpenAIModel = comboBox.Text;
+            }
+        }
+
+        private async void ButtonFetchOpenAIModels_Click(object sender, RoutedEventArgs e)
+        {
+            await FetchModelsAsync(
+                LLMProvider.OpenAI,
+                TextBoxOpenAIKey.Text?.Trim(),
+                TextBoxOpenAIBaseUrl.Text?.Trim(),
+                ComboBoxOpenAIModel,
+                sender as Button,
+                "https://api.openai.com/v1"
+            );
+        }
+
+        private void TextBoxGeminiKey_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (settings?.EmotionAnalysis != null && sender is TextBox textBox)
+            {
+                settings.EmotionAnalysis.GeminiApiKey = textBox.Text;
+            }
+        }
+
+        private void TextBoxGeminiBaseUrl_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (settings?.EmotionAnalysis != null && sender is TextBox textBox)
+            {
+                settings.EmotionAnalysis.GeminiBaseUrl = textBox.Text;
+            }
+        }
+
+        private void ComboBoxGeminiModel_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (settings?.EmotionAnalysis != null && sender is ComboBox comboBox && comboBox.SelectedItem != null)
+            {
+                var selectedItem = comboBox.SelectedItem as ComboBoxItem;
+                if (selectedItem != null)
+                {
+                    settings.EmotionAnalysis.GeminiModel = selectedItem.Content?.ToString();
+                }
+            }
+        }
+
+        private void ComboBoxGeminiModel_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (settings?.EmotionAnalysis != null && sender is ComboBox comboBox)
+            {
+                settings.EmotionAnalysis.GeminiModel = comboBox.Text;
+            }
+        }
+
+        private async void ButtonFetchGeminiModels_Click(object sender, RoutedEventArgs e)
+        {
+            await FetchModelsAsync(
+                LLMProvider.Gemini,
+                TextBoxGeminiKey.Text?.Trim(),
+                TextBoxGeminiBaseUrl.Text?.Trim(),
+                ComboBoxGeminiModel,
+                sender as Button,
+                "https://generativelanguage.googleapis.com/v1beta"
+            );
+        }
+
+        private void TextBoxOllamaBaseUrl_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (settings?.EmotionAnalysis != null && sender is TextBox textBox)
+            {
+                settings.EmotionAnalysis.OllamaBaseUrl = textBox.Text;
+            }
+        }
+
+        private void ComboBoxOllamaModel_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (settings?.EmotionAnalysis != null && sender is ComboBox comboBox && comboBox.SelectedItem != null)
+            {
+                var selectedItem = comboBox.SelectedItem as ComboBoxItem;
+                if (selectedItem != null)
+                {
+                    settings.EmotionAnalysis.OllamaModel = selectedItem.Content?.ToString();
+                }
+            }
+        }
+
+        private void ComboBoxOllamaModel_LostFocus(object sender, RoutedEventArgs e)
+        {
+            if (settings?.EmotionAnalysis != null && sender is ComboBox comboBox)
+            {
+                settings.EmotionAnalysis.OllamaModel = comboBox.Text;
+            }
+        }
+
+        private async void ButtonFetchOllamaModels_Click(object sender, RoutedEventArgs e)
+        {
+            await FetchModelsAsync(
+                LLMProvider.Ollama,
+                null, // Ollama不需要API Key
+                TextBoxOllamaBaseUrl.Text?.Trim(),
+                ComboBoxOllamaModel,
+                sender as Button,
+                "http://localhost:11434"
+            );
+        }
+
+        // 按钮事件处理
         private void ButtonOpenFolder_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -273,8 +530,11 @@ namespace VPet.Plugin.Image
         private void ButtonClearLog_Click(object sender, RoutedEventArgs e)
         {
             imageMgr.ClearLogs();
-            TextBoxLog.Clear();
-            TextBoxLog.Text = "日志已清空。\n";
+            if (TextBoxLog != null)
+            {
+                TextBoxLog.Clear();
+                TextBoxLog.Text = "日志已清空。\n";
+            }
         }
 
         private void ButtonSave_Click(object sender, RoutedEventArgs e)
@@ -334,220 +594,6 @@ namespace VPet.Plugin.Image
             }
         }
 
-        // LLM情感分析事件处理
-        private void SwitchEmotionAnalysis_Changed(object sender, RoutedEventArgs e)
-        {
-            if (settings?.EmotionAnalysis != null)
-            {
-                settings.EmotionAnalysis.EnableLLMEmotionAnalysis = SwitchEmotionAnalysis.IsChecked == true;
-            }
-        }
-
-        private void SwitchAccurateImageMatching_Changed(object sender, RoutedEventArgs e)
-        {
-            if (settings != null)
-            {
-                settings.UseAccurateImageMatching = SwitchAccurateImageMatching.IsChecked == true;
-            }
-        }
-
-        // 日志等级控制事件处理
-        private void ComboBoxLogLevel_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-        {
-            if (settings != null && ComboBoxLogLevel.SelectedItem is ComboBoxItem selectedItem)
-            {
-                if (int.TryParse(selectedItem.Tag.ToString(), out int logLevel))
-                {
-                    settings.LogLevel = logLevel;
-                    
-                    // 更新静态日志系统
-                    Utils.Logger.SetLogLevel((VPet.Plugin.Image.Utils.LogLevel)logLevel);
-                }
-            }
-        }
-
-        private void SwitchFileLogging_Changed(object sender, RoutedEventArgs e)
-        {
-            if (settings != null)
-            {
-                settings.EnableFileLogging = SwitchFileLogging.IsChecked == true;
-                
-                // 更新静态日志系统
-                Utils.Logger.EnableFileLogging = settings.EnableFileLogging;
-            }
-        }
-
-        private void ComboBoxLLMProvider_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-        {
-            if (settings?.EmotionAnalysis == null || ComboBoxLLMProvider.SelectedItem == null)
-                return;
-
-            var selectedItem = ComboBoxLLMProvider.SelectedItem as System.Windows.Controls.ComboBoxItem;
-            if (selectedItem != null)
-            {
-                string providerTag = selectedItem.Tag?.ToString()?.ToLowerInvariant() ?? "openai";
-
-                // 转换为枚举
-                switch (providerTag)
-                {
-                    case "openai":
-                        settings.EmotionAnalysis.Provider = EmotionAnalysis.LLMProvider.OpenAI;
-                        PanelOpenAI.Visibility = Visibility.Visible;
-                        PanelGemini.Visibility = Visibility.Collapsed;
-                        PanelOllama.Visibility = Visibility.Collapsed;
-                        break;
-                    case "gemini":
-                        settings.EmotionAnalysis.Provider = EmotionAnalysis.LLMProvider.Gemini;
-                        PanelOpenAI.Visibility = Visibility.Collapsed;
-                        PanelGemini.Visibility = Visibility.Visible;
-                        PanelOllama.Visibility = Visibility.Collapsed;
-                        break;
-                    case "ollama":
-                        settings.EmotionAnalysis.Provider = EmotionAnalysis.LLMProvider.Ollama;
-                        PanelOpenAI.Visibility = Visibility.Collapsed;
-                        PanelGemini.Visibility = Visibility.Collapsed;
-                        PanelOllama.Visibility = Visibility.Visible;
-                        break;
-                }
-            }
-        }
-
-        private void TextBoxOpenAIKey_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-        {
-            if (settings?.EmotionAnalysis != null)
-            {
-                settings.EmotionAnalysis.OpenAIApiKey = TextBoxOpenAIKey.Text;
-            }
-        }
-
-        private void TextBoxOpenAIBaseUrl_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-        {
-            if (settings?.EmotionAnalysis != null)
-            {
-                settings.EmotionAnalysis.OpenAIBaseUrl = TextBoxOpenAIBaseUrl.Text;
-            }
-        }
-
-        private void ComboBoxOpenAIModel_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-        {
-            if (settings?.EmotionAnalysis != null && ComboBoxOpenAIModel.SelectedItem != null)
-            {
-                var selectedItem = ComboBoxOpenAIModel.SelectedItem as System.Windows.Controls.ComboBoxItem;
-                if (selectedItem != null)
-                {
-                    settings.EmotionAnalysis.OpenAIModel = selectedItem.Content?.ToString();
-                }
-            }
-        }
-
-        private void ComboBoxOpenAIModel_LostFocus(object sender, RoutedEventArgs e)
-        {
-            if (settings?.EmotionAnalysis != null)
-            {
-                settings.EmotionAnalysis.OpenAIModel = ComboBoxOpenAIModel.Text;
-            }
-        }
-
-        private async void ButtonFetchOpenAIModels_Click(object sender, RoutedEventArgs e)
-        {
-            await FetchModelsAsync(
-                LLMProvider.OpenAI,
-                TextBoxOpenAIKey.Text?.Trim(),
-                TextBoxOpenAIBaseUrl.Text?.Trim(),
-                ComboBoxOpenAIModel,
-                ButtonFetchOpenAIModels,
-                "https://api.openai.com/v1"
-            );
-        }
-
-        private void TextBoxGeminiKey_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-        {
-            if (settings?.EmotionAnalysis != null)
-            {
-                settings.EmotionAnalysis.GeminiApiKey = TextBoxGeminiKey.Text;
-            }
-        }
-
-        private void TextBoxGeminiBaseUrl_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-        {
-            if (settings?.EmotionAnalysis != null)
-            {
-                settings.EmotionAnalysis.GeminiBaseUrl = TextBoxGeminiBaseUrl.Text;
-            }
-        }
-
-        private void ComboBoxGeminiModel_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-        {
-            if (settings?.EmotionAnalysis != null && ComboBoxGeminiModel.SelectedItem != null)
-            {
-                var selectedItem = ComboBoxGeminiModel.SelectedItem as System.Windows.Controls.ComboBoxItem;
-                if (selectedItem != null)
-                {
-                    settings.EmotionAnalysis.GeminiModel = selectedItem.Content?.ToString();
-                }
-            }
-        }
-
-        private void ComboBoxGeminiModel_LostFocus(object sender, RoutedEventArgs e)
-        {
-            if (settings?.EmotionAnalysis != null)
-            {
-                settings.EmotionAnalysis.GeminiModel = ComboBoxGeminiModel.Text;
-            }
-        }
-
-        private async void ButtonFetchGeminiModels_Click(object sender, RoutedEventArgs e)
-        {
-            await FetchModelsAsync(
-                LLMProvider.Gemini,
-                TextBoxGeminiKey.Text?.Trim(),
-                TextBoxGeminiBaseUrl.Text?.Trim(),
-                ComboBoxGeminiModel,
-                ButtonFetchGeminiModels,
-                "https://generativelanguage.googleapis.com/v1beta"
-            );
-        }
-
-        private void TextBoxOllamaBaseUrl_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
-        {
-            if (settings?.EmotionAnalysis != null)
-            {
-                settings.EmotionAnalysis.OllamaBaseUrl = TextBoxOllamaBaseUrl.Text;
-            }
-        }
-
-        private void ComboBoxOllamaModel_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
-        {
-            if (settings?.EmotionAnalysis != null && ComboBoxOllamaModel.SelectedItem != null)
-            {
-                var selectedItem = ComboBoxOllamaModel.SelectedItem as System.Windows.Controls.ComboBoxItem;
-                if (selectedItem != null)
-                {
-                    settings.EmotionAnalysis.OllamaModel = selectedItem.Content?.ToString();
-                }
-            }
-        }
-
-        private void ComboBoxOllamaModel_LostFocus(object sender, RoutedEventArgs e)
-        {
-            if (settings?.EmotionAnalysis != null)
-            {
-                settings.EmotionAnalysis.OllamaModel = ComboBoxOllamaModel.Text;
-            }
-        }
-
-        private async void ButtonFetchOllamaModels_Click(object sender, RoutedEventArgs e)
-        {
-            await FetchModelsAsync(
-                LLMProvider.Ollama,
-                null, // Ollama 不需要 API Key
-                TextBoxOllamaBaseUrl.Text?.Trim(),
-                ComboBoxOllamaModel,
-                ButtonFetchOllamaModels,
-                "http://localhost:11434"
-            );
-        }
-
         /// <summary>
         /// 统一的模型获取方法
         /// </summary>
@@ -555,8 +601,8 @@ namespace VPet.Plugin.Image
             LLMProvider provider,
             string apiKey,
             string baseUrl,
-            System.Windows.Controls.ComboBox comboBox,
-            System.Windows.Controls.Button button,
+            ComboBox comboBox,
+            Button button,
             string defaultUrl)
         {
             // 验证 API Key（Ollama 除外）
@@ -594,7 +640,7 @@ namespace VPet.Plugin.Image
                 comboBox.Items.Clear();
                 foreach (var model in models)
                 {
-                    var item = new System.Windows.Controls.ComboBoxItem
+                    var item = new ComboBoxItem
                     {
                         Content = model.Name,
                         ToolTip = string.IsNullOrEmpty(model.Description) ? model.Id : $"{model.Id}\n{model.Description}"
@@ -661,6 +707,296 @@ namespace VPet.Plugin.Image
                 MessageBox.Show($"获取模型列表失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        #region 标签管理相关方法
+
+        /// <summary>
+        /// 初始化标签管理器
+        /// </summary>
+        private void InitializeLabelManager()
+        {
+            try
+            {
+                // 使用ImageMgr的LoaddllPath方法获取正确的插件根目录
+                string pluginDir = imageMgr.LoaddllPath();
+                labelManager = new LabelManager(pluginDir);
+                labelManager.LoadLabels();
+                labelManager.CreateEmptyLabelFileIfNotExists();
+                labelManager.CreateExampleDirectories(); // 创建示例目录结构
+                
+                scannedImages = new Dictionary<string, List<ImageInfo>>();
+                currentSelectedImage = null;
+                
+                Utils.Logger.Debug("LabelManager", "标签管理器初始化完成");
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Error("LabelManager", $"初始化标签管理器失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 扫描图片按钮点击事件
+        /// </summary>
+        private void ButtonScanImages_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (TextBlockStatus != null) TextBlockStatus.Text = "正在扫描图片...";
+                
+                // 扫描图片
+                scannedImages = labelManager.ScanImages();
+                
+                // 更新UI
+                UpdateImageTree();
+                
+                int totalImages = scannedImages.Values.Sum(list => list.Count);
+                if (TextBlockStatus != null) TextBlockStatus.Text = $"扫描完成，找到 {totalImages} 张图片，分布在 {scannedImages.Count} 个目录中";
+                
+                Utils.Logger.Info("LabelManager", $"用户扫描图片完成: {totalImages} 张图片");
+            }
+            catch (Exception ex)
+            {
+                if (TextBlockStatus != null) TextBlockStatus.Text = "扫描失败";
+                MessageBox.Show($"扫描图片失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                Utils.Logger.Error("LabelManager", $"扫描图片失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 保存标签按钮点击事件
+        /// </summary>
+        private void ButtonSaveLabels_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // 保存当前编辑的标签
+                SaveCurrentImageTags();
+                
+                // 保存到文件
+                labelManager.SaveLabels();
+                
+                if (TextBlockStatus != null) TextBlockStatus.Text = "标签保存成功";
+                MessageBox.Show("标签已成功保存到文件！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                
+                Utils.Logger.Info("LabelManager", "用户保存标签成功");
+            }
+            catch (Exception ex)
+            {
+                if (TextBlockStatus != null) TextBlockStatus.Text = "保存失败";
+                MessageBox.Show($"保存标签失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                Utils.Logger.Error("LabelManager", $"保存标签失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 更新图片树视图
+        /// </summary>
+        private void UpdateImageTree()
+        {
+            if (TreeViewImages == null) return;
+
+            TreeViewImages.Items.Clear();
+            
+            if (scannedImages.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var directory in scannedImages.Keys.OrderBy(k => k))
+            {
+                var dirItem = new TreeViewItem
+                {
+                    Header = $"📁 {directory} ({scannedImages[directory].Count})",
+                    Tag = directory,
+                    IsExpanded = true
+                };
+
+                foreach (var image in scannedImages[directory].OrderBy(img => img.FileName))
+                {
+                    var imageItem = new TreeViewItem
+                    {
+                        Header = $"🖼️ {image.FileName}",
+                        Tag = image
+                    };
+                    
+                    dirItem.Items.Add(imageItem);
+                }
+                
+                TreeViewImages.Items.Add(dirItem);
+            }
+        }
+
+        /// <summary>
+        /// 图片树选择变化事件
+        /// </summary>
+        private void TreeViewImages_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+        {
+            try
+            {
+                if (e.NewValue is TreeViewItem selectedItem && selectedItem.Tag is ImageInfo imageInfo)
+                {
+                    // 保存之前选中图片的标签
+                    SaveCurrentImageTags();
+                    
+                    // 显示新选中的图片
+                    ShowImageDetails(imageInfo);
+                    currentSelectedImage = imageInfo;
+                }
+                else
+                {
+                    // 选中的是目录或其他项
+                    HideImageDetails();
+                    currentSelectedImage = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Error("LabelManager", $"选择图片时发生错误: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 显示图片详情
+        /// </summary>
+        private void ShowImageDetails(ImageInfo imageInfo)
+        {
+            try
+            {
+                // 更新标题
+                if (TextBlockImageTitle != null) TextBlockImageTitle.Text = $"🖼️ {imageInfo.FileName}";
+                
+                // 显示图片预览
+                if (ImagePreview != null)
+                {
+                    var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+                    bitmap.BeginInit();
+                    bitmap.UriSource = new Uri(imageInfo.FullPath);
+                    bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+                    bitmap.EndInit();
+                    ImagePreview.Source = bitmap;
+                }
+                
+                // 显示文件信息
+                if (TextBlockFileName != null) TextBlockFileName.Text = $"文件名: {imageInfo.FileName}\n路径: {imageInfo.RelativePath}";
+                if (TextBlockFileSize != null) TextBlockFileSize.Text = $"大小: {imageInfo.FormattedSize}";
+                
+                // 显示标签
+                if (TextBoxImageTags != null)
+                {
+                    var tags = labelManager.GetImageTags(imageInfo.RelativePath);
+                    // 分离心情标签和普通标签
+                    var emotionTags = new[] { "general", "happy", "normal", "poor", "ill" };
+                    var normalTags = tags.Where(tag => !emotionTags.Contains(tag.ToLower())).ToList();
+                    var emotionTag = tags.FirstOrDefault(tag => emotionTags.Contains(tag.ToLower()));
+                    
+                    TextBoxImageTags.Text = string.Join(", ", normalTags);
+                    
+                    // 设置心情选择
+                    if (ComboBoxEmotion != null)
+                    {
+                        var selectedIndex = emotionTag?.ToLower() switch
+                        {
+                            "happy" => 1,
+                            "normal" => 2,
+                            "poor" => 3,
+                            "ill" => 4,
+                            _ => 0 // general 或未设置
+                        };
+                        ComboBoxEmotion.SelectedIndex = selectedIndex;
+                    }
+                }
+                
+                // 显示详情面板
+                if (PanelImageDetails != null) PanelImageDetails.Visibility = Visibility.Visible;
+                if (PanelEmptyState != null) PanelEmptyState.Visibility = Visibility.Collapsed;
+                
+                if (TextBlockStatus != null) TextBlockStatus.Text = $"正在编辑: {imageInfo.FileName}";
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Error("LabelManager", $"显示图片详情失败: {ex.Message}");
+                MessageBox.Show($"无法显示图片：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        /// <summary>
+        /// 隐藏图片详情
+        /// </summary>
+        private void HideImageDetails()
+        {
+            if (PanelImageDetails != null) PanelImageDetails.Visibility = Visibility.Collapsed;
+            if (PanelEmptyState != null) PanelEmptyState.Visibility = Visibility.Visible;
+            if (TextBlockImageTitle != null) TextBlockImageTitle.Text = "🖼️ 选择图片查看预览";
+            if (TextBlockStatus != null) TextBlockStatus.Text = "准备就绪";
+        }
+
+        /// <summary>
+        /// 保存当前图片的标签
+        /// </summary>
+        private void SaveCurrentImageTags()
+        {
+            if (currentSelectedImage != null)
+            {
+                try
+                {
+                    var allTags = new List<string>();
+                    
+                    // 添加普通标签
+                    if (TextBoxImageTags != null && !string.IsNullOrEmpty(TextBoxImageTags.Text))
+                    {
+                        var tagsText = TextBoxImageTags.Text.Trim();
+                        var normalTags = tagsText.Split(new char[] { ',', '，' }, StringSplitOptions.RemoveEmptyEntries)
+                                               .Select(tag => tag.Trim())
+                                               .Where(tag => !string.IsNullOrEmpty(tag))
+                                               .ToList();
+                        allTags.AddRange(normalTags);
+                    }
+                    
+                    // 添加心情标签
+                    if (ComboBoxEmotion != null && ComboBoxEmotion.SelectedItem is ComboBoxItem selectedItem)
+                    {
+                        var emotionTag = selectedItem.Tag?.ToString();
+                        if (!string.IsNullOrEmpty(emotionTag) && emotionTag != "general")
+                        {
+                            allTags.Add(emotionTag);
+                        }
+                    }
+                    
+                    labelManager.SetImageTags(currentSelectedImage.RelativePath, allTags);
+                    currentSelectedImage.Tags = allTags;
+                    
+                    Utils.Logger.Debug("LabelManager", $"保存图片标签: {currentSelectedImage.FileName} -> [{string.Join(", ", allTags)}]");
+                }
+                catch (Exception ex)
+                {
+                    Utils.Logger.Error("LabelManager", $"保存当前图片标签失败: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// 心情选择变化事件
+        /// </summary>
+        private void ComboBoxEmotion_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // 当心情选择变化时，自动保存
+            if (currentSelectedImage != null)
+            {
+                SaveCurrentImageTags();
+            }
+        }
+
+        /// <summary>
+        /// 图片标签文本变化事件
+        /// </summary>
+        private void TextBoxImageTags_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            // 实时保存标签变化（可选）
+            // 这里可以添加防抖逻辑，避免频繁保存
+        }
+
+        #endregion
 
         protected override void OnClosed(EventArgs e)
         {

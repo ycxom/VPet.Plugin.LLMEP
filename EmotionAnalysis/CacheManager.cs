@@ -5,9 +5,9 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using VPet.Plugin.Image.Utils;
+using VPet.Plugin.LLMEP.Utils;
 
-namespace VPet.Plugin.Image.EmotionAnalysis
+namespace VPet.Plugin.LLMEP.EmotionAnalysis
 {
     /// <summary>
     /// 缓存条目

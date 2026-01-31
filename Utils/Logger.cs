@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace VPet.Plugin.Image.Utils
+namespace VPet.Plugin.LLMEP.Utils
 {
     /// <summary>
     /// 日志等级
@@ -43,7 +43,7 @@ namespace VPet.Plugin.Image.Utils
 
         public static LogLevel MinLogLevel { get; set; } = LogLevel.Info;
         public static bool EnableFileLogging { get; set; } = false;
-        public static string LogFilePath { get; set; } = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "VPet.Plugin.Image.log");
+        public static string LogFilePath { get; set; } = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "VPet.Plugin.LLMEP.log");
 
         /// <summary>
         /// 记录调试日志

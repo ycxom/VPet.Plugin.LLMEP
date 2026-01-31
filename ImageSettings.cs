@@ -1,10 +1,10 @@
 using System;
 using System.IO;
 using System.Text.Json;
-using VPet.Plugin.Image.EmotionAnalysis;
-using VPet.Plugin.Image.Utils;
+using VPet.Plugin.LLMEP.EmotionAnalysis;
+using VPet.Plugin.LLMEP.Utils;
 
-namespace VPet.Plugin.Image
+namespace VPet.Plugin.LLMEP
 {
     /// <summary>
     /// 表情包插件设置类

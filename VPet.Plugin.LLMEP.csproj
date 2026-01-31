@@ -12,10 +12,10 @@
   </PropertyGroup>
   
   <ItemGroup>
-    <Compile Remove="1102_Image\**" />
-    <EmbeddedResource Remove="1102_Image\**" />
-    <Page Remove="1102_Image\**" />
-    <None Include="1102_Image\**" CopyToOutputDirectory="PreserveNewest" />
+    <Compile Remove="3001_LLMEP\**" />
+    <EmbeddedResource Remove="3001_LLMEP\**" />
+    <Page Remove="3001_LLMEP\**" />
+    <None Include="3001_LLMEP\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   
   <ItemGroup>
@@ -23,14 +23,16 @@
     <PackageReference Include="VPet-Simulator.Windows.Interface" Version="1.1.0.58" />
     <PackageReference Include="WpfAnimatedGif" Version="2.0.2" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <PackageReference Include="Panuon.WPF" Version="1.1.3" />
+    <PackageReference Include="Panuon.WPF.UI" Version="1.2.4.10" />
   </ItemGroup>
   
   <!-- 编译后自动复制 DLL 到 plugin 目录 -->
   <Target Name="CopyToPlugin" AfterTargets="Build">
-    <MakeDir Directories="$(ProjectDir)1102_Image\plugin\" Condition="!Exists('$(ProjectDir)1102_Image\plugin\')" />
+    <MakeDir Directories="$(ProjectDir)3001_LLMEP\plugin\" Condition="!Exists('$(ProjectDir)3001_LLMEP\plugin\')" />
     <ItemGroup>
       <PluginFiles Include="$(OutputPath)*.dll" Exclude="$(OutputPath)VPet-Simulator*.dll" />
     </ItemGroup>
-    <Copy SourceFiles="@(PluginFiles)" DestinationFolder="$(ProjectDir)1102_Image\plugin\" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(PluginFiles)" DestinationFolder="$(ProjectDir)3001_LLMEP\plugin\" SkipUnchangedFiles="true" />
   </Target>
 </Project>

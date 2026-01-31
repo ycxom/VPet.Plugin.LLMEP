@@ -8,7 +8,7 @@ using System.Windows.Media.Imaging;
 using VPet_Simulator.Core;
 using VPet_Simulator.Windows.Interface;
 
-namespace VPet.Plugin.Image.EmotionAnalysis
+namespace VPet.Plugin.LLMEP.EmotionAnalysis
 {
     /// <summary>
     /// 情感分析器实现
@@ -62,8 +62,13 @@ namespace VPet.Plugin.Image.EmotionAnalysis
                 // 读取DIY表情包标签
                 if (_imageMgr.Settings.EnableDIYImages)
                 {
-                    string diyLabelPath = Path.Combine(dllPath, "DIY_Expression", "label.json");
-                    ExtractTagsFromLabelFile(diyLabelPath, allTags);
+                    // 新的DIY标签系统
+                    string diyLabelPath = Path.Combine(dllPath, "plugin", "data", "diy_labels.json");
+                    ExtractTagsFromDIYLabelFile(diyLabelPath, allTags);
+                    
+                    // 兼容旧的DIY标签系统
+                    string oldDiyLabelPath = Path.Combine(dllPath, "DIY_Expression", "label.json");
+                    ExtractTagsFromLabelFile(oldDiyLabelPath, allTags);
                 }
 
                 if (allTags.Count > 0)
@@ -144,6 +149,59 @@ namespace VPet.Plugin.Image.EmotionAnalysis
             catch (Exception ex)
             {
                 _imageMgr.LogError("EmotionAnalyzer", $"提取标签失败: {labelFilePath}, 错误: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 从DIY标签文件中提取标签（新格式：相对路径 -> 标签列表）
+        /// </summary>
+        private void ExtractTagsFromDIYLabelFile(string labelFilePath, HashSet<string> allTags)
+        {
+            try
+            {
+                if (!File.Exists(labelFilePath))
+                {
+                    _imageMgr.LogDebug("EmotionAnalyzer", $"DIY标签文件不存在: {labelFilePath}");
+                    return;
+                }
+
+                string jsonContent = File.ReadAllText(labelFilePath);
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                };
+
+                // DIY标签格式：{ "相对路径": ["标签1", "标签2"] }
+                var diyLabels = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(jsonContent, options);
+
+                if (diyLabels != null)
+                {
+                    int tagCount = 0;
+                    foreach (var kvp in diyLabels)
+                    {
+                        if (kvp.Value != null)
+                        {
+                            foreach (var label in kvp.Value)
+                            {
+                                if (!string.IsNullOrWhiteSpace(label))
+                                {
+                                    // 过滤掉心情标签，只保留普通标签用于LLM匹配
+                                    var emotionTags = new[] { "general", "happy", "normal", "poor", "ill" };
+                                    if (!emotionTags.Contains(label.ToLower()))
+                                    {
+                                        allTags.Add(label.Trim());
+                                        tagCount++;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _imageMgr.LogDebug("EmotionAnalyzer", $"从DIY标签文件提取了 {tagCount} 个标签");
+                }
+            }
+            catch (Exception ex)
+            {
+                _imageMgr.LogError("EmotionAnalyzer", $"提取DIY标签失败: {labelFilePath}, 错误: {ex.Message}");
             }
         }
         /// <summary>

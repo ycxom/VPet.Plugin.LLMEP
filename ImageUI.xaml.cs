@@ -1,7 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 
-namespace VPet.Plugin.Image
+namespace VPet.Plugin.LLMEP
 {
     public partial class ImageUI : UserControl
     {

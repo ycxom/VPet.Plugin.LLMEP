@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Windows.Media.Imaging;
 
-namespace VPet.Plugin.Image
+namespace VPet.Plugin.LLMEP
 {
     /// <summary>
     /// 标签图片匹配器 - 根据标签精确匹配表情包
@@ -48,9 +48,14 @@ namespace VPet.Plugin.Image
                 // 加载DIY表情包标签
                 if (_imageMgr.Settings.EnableDIYImages)
                 {
-                    string diyLabelPath = Path.Combine(dllPath, "DIY_Expression", "label.json");
+                    // 新的标签系统：从 plugin/data/diy_labels.json 加载
+                    string diyLabelPath = Path.Combine(dllPath, "plugin", "data", "diy_labels.json");
                     string diyImagePath = Path.Combine(dllPath, "DIY_Expression");
-                    LoadLabelsFromFile(diyLabelPath, diyImagePath);
+                    LoadDIYLabelsFromFile(diyLabelPath, diyImagePath);
+                    
+                    // 兼容旧的标签系统：从 DIY_Expression/label.json 加载
+                    string oldDiyLabelPath = Path.Combine(dllPath, "DIY_Expression", "label.json");
+                    LoadLabelsFromFile(oldDiyLabelPath, diyImagePath);
                 }
 
                 _imageMgr.LogDebug("LabelMatcher", $"已加载 {_imageLabels.Count} 个图片的标签信息");
@@ -140,6 +145,91 @@ namespace VPet.Plugin.Image
             catch (Exception ex)
             {
                 _imageMgr.LogError("LabelMatcher", $"加载标签文件失败: {labelFilePath}, 错误: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 从DIY标签文件加载标签（新格式：相对路径 -> 标签列表）
+        /// </summary>
+        private void LoadDIYLabelsFromFile(string labelFilePath, string imageBasePath)
+        {
+            try
+            {
+                if (!File.Exists(labelFilePath))
+                {
+                    _imageMgr.LogMessage($"DIY标签文件不存在: {labelFilePath}");
+                    return;
+                }
+
+                _imageMgr.LogDebug("LabelMatcher", $"开始读取DIY标签文件: {labelFilePath}");
+                string jsonContent = File.ReadAllText(labelFilePath);
+                _imageMgr.LogDebug("LabelMatcher", $"DIY标签文件内容长度: {jsonContent.Length} 字符");
+
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                };
+
+                // DIY标签格式：{ "相对路径": ["标签1", "标签2"] }
+                var diyLabels = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(jsonContent, options);
+                
+                if (diyLabels == null)
+                {
+                    _imageMgr.LogWarning("LabelMatcher", $"DIY标签文件格式错误: {labelFilePath}");
+                    return;
+                }
+
+                int loadedCount = 0;
+                foreach (var kvp in diyLabels)
+                {
+                    string relativePath = kvp.Key;
+                    List<string> tags = kvp.Value;
+
+                    if (string.IsNullOrEmpty(relativePath) || tags == null || tags.Count == 0)
+                        continue;
+
+                    // 从相对路径获取文件名
+                    string filename = Path.GetFileName(relativePath);
+                    
+                    // 构建完整图片路径
+                    string fullImagePath = Path.Combine(imageBasePath, relativePath);
+                    
+                    if (File.Exists(fullImagePath))
+                    {
+                        // 存储标签信息（使用文件名作为键，保持与内置标签一致）
+                        string cacheKey = $"diy_{filename}"; // 添加前缀避免与内置图片冲突
+                        _imageLabels[cacheKey] = tags.ToList();
+
+                        // 预加载图片
+                        try
+                        {
+                            var bitmapImage = new BitmapImage();
+                            bitmapImage.BeginInit();
+                            bitmapImage.UriSource = new Uri(fullImagePath, UriKind.Absolute);
+                            bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+                            bitmapImage.EndInit();
+
+                            _imageCache[cacheKey] = bitmapImage;
+                            loadedCount++;
+                            
+                            _imageMgr.LogDebug("LabelMatcher", $"加载DIY图片: {relativePath} -> 标签: [{string.Join(", ", tags)}]");
+                        }
+                        catch (Exception ex)
+                        {
+                            _imageMgr.LogWarning("LabelMatcher", $"预加载DIY图片失败: {fullImagePath}, 错误: {ex.Message}");
+                        }
+                    }
+                    else
+                    {
+                        _imageMgr.LogWarning("LabelMatcher", $"DIY图片文件不存在: {fullImagePath}");
+                    }
+                }
+
+                _imageMgr.LogInfo("LabelMatcher", $"从 {labelFilePath} 加载了 {loadedCount} 个DIY图片标签");
+            }
+            catch (Exception ex)
+            {
+                _imageMgr.LogError("LabelMatcher", $"加载DIY标签文件失败: {labelFilePath}, 错误: {ex.Message}");
             }
         }
 

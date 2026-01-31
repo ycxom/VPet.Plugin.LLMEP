@@ -1,4 +1,4 @@
-<pu:WindowX x:Class="VPet.Plugin.Image.ImageSettingWindow"
+<pu:WindowX x:Class="VPet.Plugin.LLMEP.ImageSettingWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -6,1057 +6,290 @@
         xmlns:pu="clr-namespace:Panuon.WPF.UI;assembly=Panuon.WPF.UI"
         mc:Ignorable="d"
         Title="LLM表情包插件设置" 
-        Width="700" Height="600"
+        Width="800" Height="700"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
-        Style="{DynamicResource BaseWindowXStyle}"
-        FontSize="14"
-        Foreground="{StaticResource PrimaryText}">
-    
-    <Window.Resources>
-        <!-- 现代化 Tab 样式 -->
-        <Style x:Key="ModernTabControl" TargetType="TabControl">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="0"/>
-        </Style>
-
-        <Style x:Key="ModernTabItem" TargetType="TabItem">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="#666666"/>
-            <Setter Property="FontSize" Value="15"/>
-            <Setter Property="FontWeight" Value="Normal"/>
-            <Setter Property="Padding" Value="20,12"/>
-            <Setter Property="Margin" Value="0,0,4,0"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="TabItem">
-                        <Border x:Name="Border"
-                                Background="{TemplateBinding Background}"
-                                BorderThickness="0,0,0,3"
-                                BorderBrush="Transparent"
-                                CornerRadius="4,4,0,0"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter x:Name="ContentSite"
-                                            VerticalAlignment="Center"
-                                            HorizontalAlignment="Center"
-                                            ContentSource="Header"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Border" Property="Background" Value="#F5F5F5"/>
-                                <Setter TargetName="Border" Property="BorderBrush" Value="#0078D4"/>
-                                <Setter Property="Foreground" Value="#0078D4"/>
-                                <Setter Property="FontWeight" Value="SemiBold"/>
-                            </Trigger>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Border" Property="Background" Value="#F0F0F0"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- 设置卡片样式 -->
-        <Style x:Key="SettingCard" TargetType="Border">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderBrush" Value="#E0E0E0"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="Padding" Value="20"/>
-            <Setter Property="Margin" Value="0,0,0,16"/>
-            <Setter Property="Effect">
-                <Setter.Value>
-                    <DropShadowEffect Color="#000000" Opacity="0.05" BlurRadius="8" ShadowDepth="2" Direction="270"/>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- 标题样式 -->
-        <Style x:Key="SectionTitle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="16"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="#333333"/>
-            <Setter Property="Margin" Value="0,0,0,12"/>
-        </Style>
-
-        <!-- 描述文本样式 -->
-        <Style x:Key="DescriptionText" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Foreground" Value="#999999"/>
-            <Setter Property="TextWrapping" Value="Wrap"/>
-            <Setter Property="LineHeight" Value="18"/>
-        </Style>
-
-        <!-- 现代化按钮样式 -->
-        <Style x:Key="PrimaryButton" TargetType="Button">
-            <Setter Property="Background" Value="#0078D4"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="20,10"/>
-            <Setter Property="FontSize" Value="14"/>
-            <Setter Property="FontWeight" Value="Medium"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="border"
-                                Background="{TemplateBinding Background}"
-                                CornerRadius="6"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#005A9E"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#004578"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="SecondaryButton" TargetType="Button">
-            <Setter Property="Background" Value="#F3F3F3"/>
-            <Setter Property="Foreground" Value="#333333"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="BorderBrush" Value="#D0D0D0"/>
-            <Setter Property="Padding" Value="20,10"/>
-            <Setter Property="FontSize" Value="14"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="border"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="6"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#E8E8E8"/>
-                                <Setter TargetName="border" Property="BorderBrush" Value="#B0B0B0"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#D8D8D8"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-    </Window.Resources>
+        FontSize="14">
     
     <Grid Background="#FAFAFA">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-        
-        <!-- TabControl -->
-        <TabControl Grid.Row="1" 
-                    Style="{StaticResource ModernTabControl}"
-                    Margin="0,0,0,0">
+        <TabControl>
             <!-- 基本设置 Tab -->
-            <TabItem Header="⚙️ 基本设置" Style="{StaticResource ModernTabItem}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20">
+            <TabItem Header="⚙️ 基本设置">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
                     <StackPanel>
-                        <!-- 功能开关卡片 -->
-                        <Border Style="{StaticResource SettingCard}">
-                            <StackPanel>
-                                <TextBlock Text="功能开关" Style="{StaticResource SectionTitle}"/>
-                                
-                                <!-- 启用插件 -->
-                                <Grid Margin="0,0,0,16">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0">
-                                        <TextBlock Text="启用插件" 
-                                                 FontSize="14" 
-                                                 FontWeight="Medium" 
-                                                 Foreground="#333333"/>
-                                        <TextBlock Text="开启后将根据桌宠心情自动显示表情包" 
-                                                 Style="{StaticResource DescriptionText}"
-                                                 Margin="0,4,0,0"/>
-                                    </StackPanel>
-                                    <pu:Switch x:Name="SwitchEnabled" 
-                                             Grid.Column="1"
-                                             Background="Transparent"
-                                             BorderBrush="#D0D0D0"
-                                             BoxHeight="24" 
-                                             BoxWidth="48"
-                                             CheckedBackground="#0078D4"
-                                             CheckedBorderBrush="#0078D4"
-                                             CheckedToggleBrush="White"
-                                             ToggleBrush="#999999"
-                                             ToggleShadowColor="{x:Null}"
-                                             ToggleSize="20"
-                                             Checked="SwitchEnabled_Changed"
-                                             Unchecked="SwitchEnabled_Changed"
-                                             VerticalAlignment="Center"/>
-                                </Grid>
-
-                                <!-- 启用内置表情包 -->
-                                <Grid Margin="0,0,0,16">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0">
-                                        <TextBlock Text="启用内置表情包" 
-                                                 FontSize="14" 
-                                                 FontWeight="Medium" 
-                                                 Foreground="#333333"/>
-                                        <TextBlock Text="使用插件自带的默认表情包（VPet_Expression文件夹）" 
-                                                 Style="{StaticResource DescriptionText}"
-                                                 Margin="0,4,0,0"/>
-                                    </StackPanel>
-                                    <pu:Switch x:Name="SwitchBuiltInImages" 
-                                             Grid.Column="1"
-                                             Background="Transparent"
-                                             BorderBrush="#D0D0D0"
-                                             BoxHeight="24" 
-                                             BoxWidth="48"
-                                             CheckedBackground="#0078D4"
-                                             CheckedBorderBrush="#0078D4"
-                                             CheckedToggleBrush="White"
-                                             ToggleBrush="#999999"
-                                             ToggleShadowColor="{x:Null}"
-                                             ToggleSize="20"
-                                             Checked="SwitchBuiltInImages_Changed"
-                                             Unchecked="SwitchBuiltInImages_Changed"
-                                             VerticalAlignment="Center"/>
-                                </Grid>
-
-                                <!-- 启用DIY表情包 -->
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0">
-                                        <TextBlock Text="启用DIY表情包" 
-                                                 FontSize="14" 
-                                                 FontWeight="Medium" 
-                                                 Foreground="#333333"/>
-                                        <TextBlock Text="使用自定义表情包（DIY_Expression文件夹）" 
-                                                 Style="{StaticResource DescriptionText}"
-                                                 Margin="0,4,0,0"/>
-                                    </StackPanel>
-                                    <pu:Switch x:Name="SwitchDIYImages" 
-                                             Grid.Column="1"
-                                             Background="Transparent"
-                                             BorderBrush="#D0D0D0"
-                                             BoxHeight="24" 
-                                             BoxWidth="48"
-                                             CheckedBackground="#0078D4"
-                                             CheckedBorderBrush="#0078D4"
-                                             CheckedToggleBrush="White"
-                                             ToggleBrush="#999999"
-                                             ToggleShadowColor="{x:Null}"
-                                             ToggleSize="20"
-                                             Checked="SwitchDIYImages_Changed"
-                                             Unchecked="SwitchDIYImages_Changed"
-                                             VerticalAlignment="Center"/>
-                                </Grid>
+                        <!-- 功能开关 -->
+                        <GroupBox Header="功能开关" Margin="0,0,0,20">
+                            <StackPanel Margin="10">
+                                <CheckBox x:Name="CheckBoxEnabled" Content="启用插件" Margin="0,5" 
+                                        Checked="CheckBoxEnabled_Changed" Unchecked="CheckBoxEnabled_Changed"/>
+                                <CheckBox x:Name="CheckBoxBuiltInImages" Content="启用内置表情包" Margin="0,5"
+                                        Checked="CheckBoxBuiltInImages_Changed" Unchecked="CheckBoxBuiltInImages_Changed"/>
+                                <CheckBox x:Name="CheckBoxDIYImages" Content="启用DIY表情包" Margin="0,5"
+                                        Checked="CheckBoxDIYImages_Changed" Unchecked="CheckBoxDIYImages_Changed"/>
                             </StackPanel>
-                        </Border>
+                        </GroupBox>
 
-                        <!-- 时间触发设置卡片 -->
-                        <Border x:Name="PanelTimeTrigger" Style="{StaticResource SettingCard}">
-                            <StackPanel>
-                                <!-- 时间触发开关 -->
-                                <Grid Margin="0,0,0,20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0">
-                                        <TextBlock Text="⏰ 时间触发" 
-                                                 FontSize="16" 
-                                                 FontWeight="SemiBold" 
-                                                 Foreground="#333333"/>
-                                        <TextBlock Text="根据设定的时间间隔自动显示表情包" 
-                                                 Style="{StaticResource DescriptionText}"
-                                                 Margin="0,4,0,0"/>
+                        <!-- 时间触发设置 -->
+                        <GroupBox Header="⏰ 时间触发" Margin="0,0,0,20">
+                            <StackPanel Margin="10">
+                                <CheckBox x:Name="CheckBoxTimeTrigger" Content="启用时间触发" Margin="0,5"
+                                        Checked="CheckBoxTimeTrigger_Changed" Unchecked="CheckBoxTimeTrigger_Changed"/>
+                                <StackPanel x:Name="TimeTriggerSettings" Margin="20,10,0,0">
+                                    <StackPanel Orientation="Horizontal" Margin="0,5">
+                                        <TextBlock Text="显示时长:" VerticalAlignment="Center" Width="80"/>
+                                        <Slider x:Name="SliderDisplayDuration" Width="200" Minimum="1" Maximum="10" Value="3" TickFrequency="1" IsSnapToTickEnabled="True"
+                                              ValueChanged="SliderDisplayDuration_ValueChanged"/>
+                                        <TextBlock Text="{Binding ElementName=SliderDisplayDuration, Path=Value, StringFormat={}{0:F0} 秒}" VerticalAlignment="Center" Margin="10,0,0,0"/>
                                     </StackPanel>
-                                    <pu:Switch x:Name="SwitchTimeTrigger" 
-                                             Grid.Column="1"
-                                             Background="Transparent"
-                                             BorderBrush="#D0D0D0"
-                                             BoxHeight="24" 
-                                             BoxWidth="48"
-                                             CheckedBackground="#0078D4"
-                                             CheckedBorderBrush="#0078D4"
-                                             CheckedToggleBrush="White"
-                                             ToggleBrush="#999999"
-                                             ToggleShadowColor="{x:Null}"
-                                             ToggleSize="20"
-                                             Checked="SwitchTimeTrigger_Changed"
-                                             Unchecked="SwitchTimeTrigger_Changed"
-                                             VerticalAlignment="Center"/>
-                                </Grid>
-
-                                <!-- 时间触发具体设置 -->
-                                <StackPanel x:Name="TimeTriggerSettings">
-                                    <!-- 显示时长 -->
-                                    <StackPanel Margin="0,0,0,20">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0"
-                                                     Text="显示时长" 
-                                                     FontSize="14" 
-                                                     FontWeight="Medium" 
-                                                     Foreground="#333333"
-                                                     VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="1"
-                                                     Text="{Binding ElementName=SliderDisplayDuration, Path=Value, StringFormat={}{0:F0} 秒}" 
-                                                     FontSize="14"
-                                                     FontWeight="SemiBold"
-                                                     Foreground="#0078D4"
-                                                     VerticalAlignment="Center"
-                                                     MinWidth="60"
-                                                     TextAlignment="Right"/>
-                                        </Grid>
-                                        <Slider x:Name="SliderDisplayDuration" 
-                                              Minimum="1" 
-                                              Maximum="10" 
-                                              TickFrequency="1" 
-                                              IsSnapToTickEnabled="True"
-                                              ValueChanged="SliderDisplayDuration_ValueChanged"
-                                              Margin="0,8,0,0"
-                                              Height="32"/>
-                                        <TextBlock Text="表情包在屏幕上显示的时长" 
-                                                 Style="{StaticResource DescriptionText}"
-                                                 Margin="0,4,0,0"/>
+                                    <StackPanel Orientation="Horizontal" Margin="0,5">
+                                        <TextBlock Text="显示间隔:" VerticalAlignment="Center" Width="80"/>
+                                        <Slider x:Name="SliderDisplayInterval" Width="200" Minimum="1" Maximum="60" Value="10" TickFrequency="1" IsSnapToTickEnabled="True"
+                                              ValueChanged="SliderDisplayInterval_ValueChanged"/>
+                                        <TextBlock Text="{Binding ElementName=SliderDisplayInterval, Path=Value, StringFormat={}{0:F0} 分钟}" VerticalAlignment="Center" Margin="10,0,0,0"/>
                                     </StackPanel>
-
-                                    <!-- 显示间隔 -->
-                                    <StackPanel Margin="0,0,0,16">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0"
-                                                     Text="显示间隔" 
-                                                     FontSize="14" 
-                                                     FontWeight="Medium" 
-                                                     Foreground="#333333"
-                                                     VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="1"
-                                                     Text="{Binding ElementName=SliderDisplayInterval, Path=Value, StringFormat={}{0:F0} 分钟}" 
-                                                     FontSize="14"
-                                                     FontWeight="SemiBold"
-                                                     Foreground="#0078D4"
-                                                     VerticalAlignment="Center"
-                                                     MinWidth="80"
-                                                     TextAlignment="Right"/>
-                                        </Grid>
-                                        <Slider x:Name="SliderDisplayInterval" 
-                                              Minimum="1" 
-                                              Maximum="60" 
-                                              TickFrequency="1" 
-                                              IsSnapToTickEnabled="True"
-                                              ValueChanged="SliderDisplayInterval_ValueChanged"
-                                              Margin="0,8,0,0"
-                                              Height="32"/>
-                                        <TextBlock Text="两次显示表情包之间的时间间隔" 
-                                                 Style="{StaticResource DescriptionText}"
-                                                 Margin="0,4,0,0"/>
-                                    </StackPanel>
-
-                                    <!-- 随机间隔 -->
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
-                                            <TextBlock Text="随机间隔" 
-                                                     FontSize="14" 
-                                                     FontWeight="Medium" 
-                                                     Foreground="#333333"/>
-                                            <TextBlock Text="开启后显示间隔将在设定值的 50%-150% 之间随机变化" 
-                                                     Style="{StaticResource DescriptionText}"
-                                                     Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                        <pu:Switch x:Name="SwitchRandomInterval" 
-                                                 Grid.Column="1"
-                                                 Background="Transparent"
-                                                 BorderBrush="#D0D0D0"
-                                                 BoxHeight="24" 
-                                                 BoxWidth="48"
-                                                 CheckedBackground="#0078D4"
-                                                 CheckedBorderBrush="#0078D4"
-                                                 CheckedToggleBrush="White"
-                                                 ToggleBrush="#999999"
-                                                 ToggleShadowColor="{x:Null}"
-                                                 ToggleSize="20"
-                                                 Checked="SwitchRandomInterval_Changed"
-                                                 Unchecked="SwitchRandomInterval_Changed"
-                                                 VerticalAlignment="Center"/>
-                                    </Grid>
+                                    <CheckBox x:Name="CheckBoxRandomInterval" Content="随机间隔" Margin="0,5"
+                                            Checked="CheckBoxRandomInterval_Changed" Unchecked="CheckBoxRandomInterval_Changed"/>
                                 </StackPanel>
                             </StackPanel>
-                        </Border>
+                        </GroupBox>
 
-                        <!-- 气泡触发设置卡片 -->
-                        <Border x:Name="PanelBubbleTrigger" Style="{StaticResource SettingCard}">
-                            <StackPanel>
-                                <!-- 气泡触发开关 -->
-                                <Grid Margin="0,0,0,20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0">
-                                        <TextBlock Text="💬 气泡触发" 
-                                                 FontSize="16" 
-                                                 FontWeight="SemiBold" 
-                                                 Foreground="#333333"/>
-                                        <TextBlock Text="根据VPet说话概率触发表情包显示" 
-                                                 Style="{StaticResource DescriptionText}"
-                                                 Margin="0,4,0,0"/>
-                                    </StackPanel>
-                                    <pu:Switch x:Name="SwitchBubbleTrigger" 
-                                             Grid.Column="1"
-                                             Background="Transparent"
-                                             BorderBrush="#D0D0D0"
-                                             BoxHeight="24" 
-                                             BoxWidth="48"
-                                             CheckedBackground="#0078D4"
-                                             CheckedBorderBrush="#0078D4"
-                                             CheckedToggleBrush="White"
-                                             ToggleBrush="#999999"
-                                             ToggleShadowColor="{x:Null}"
-                                             ToggleSize="20"
-                                             Checked="SwitchBubbleTrigger_Changed"
-                                             Unchecked="SwitchBubbleTrigger_Changed"
-                                             VerticalAlignment="Center"/>
-                                </Grid>
-
-                                <!-- 气泡触发具体设置 -->
-                                <StackPanel x:Name="BubbleTriggerSettings">
-                                    <!-- 气泡触发概率 -->
-                                    <StackPanel>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0"
-                                                     Text="触发概率" 
-                                                     FontSize="14" 
-                                                     FontWeight="Medium" 
-                                                     Foreground="#333333"
-                                                     VerticalAlignment="Center"/>
-                                            <TextBlock Grid.Column="1"
-                                                     Text="{Binding ElementName=SliderBubbleTriggerProbability, Path=Value, StringFormat={}{0:F0}%}" 
-                                                     FontSize="14"
-                                                     FontWeight="SemiBold"
-                                                     Foreground="#0078D4"
-                                                     VerticalAlignment="Center"
-                                                     MinWidth="60"
-                                                     TextAlignment="Right"/>
-                                        </Grid>
-                                        <Slider x:Name="SliderBubbleTriggerProbability" 
-                                              Minimum="1" 
-                                              Maximum="100" 
-                                              TickFrequency="1" 
-                                              IsSnapToTickEnabled="True"
-                                              ValueChanged="SliderBubbleTriggerProbability_ValueChanged"
-                                              Margin="0,8,0,0"
-                                              Height="32"/>
-                                        <TextBlock Text="VPet每次说话时显示表情包的概率（百分比）" 
-                                                 Style="{StaticResource DescriptionText}"
-                                                 Margin="0,4,0,0"/>
+                        <!-- 气泡触发设置 -->
+                        <GroupBox Header="💬 气泡触发" Margin="0,0,0,20">
+                            <StackPanel Margin="10">
+                                <CheckBox x:Name="CheckBoxBubbleTrigger" Content="启用气泡触发" Margin="0,5"
+                                        Checked="CheckBoxBubbleTrigger_Changed" Unchecked="CheckBoxBubbleTrigger_Changed"/>
+                                <StackPanel x:Name="BubbleTriggerSettings" Margin="20,10,0,0">
+                                    <StackPanel Orientation="Horizontal" Margin="0,5">
+                                        <TextBlock Text="触发概率:" VerticalAlignment="Center" Width="80"/>
+                                        <Slider x:Name="SliderBubbleTriggerProbability" Width="200" Minimum="1" Maximum="100" Value="20" TickFrequency="1" IsSnapToTickEnabled="True"
+                                              ValueChanged="SliderBubbleTriggerProbability_ValueChanged"/>
+                                        <TextBlock Text="{Binding ElementName=SliderBubbleTriggerProbability, Path=Value, StringFormat={}{0:F0}%}" VerticalAlignment="Center" Margin="10,0,0,0"/>
                                     </StackPanel>
                                 </StackPanel>
                             </StackPanel>
-                        </Border>
+                        </GroupBox>
 
-                        <!-- 表情包目录卡片 -->
-                        <Border Style="{StaticResource SettingCard}">
-                            <StackPanel>
-                                <TextBlock Text="表情包目录" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock x:Name="TextBlockImagePath" 
-                                         Text="DIY_Expression/" 
-                                         FontSize="13"
-                                         FontFamily="Consolas"
-                                         Foreground="#666666"
-                                         Background="#F5F5F5"
-                                         Padding="12,8"
-                                         TextWrapping="Wrap"
-                                         Margin="0,0,0,12"/>
-                                <Button x:Name="ButtonOpenFolder"
-                                        Content="📁 打开表情包文件夹"
-                                        Style="{StaticResource SecondaryButton}"
-                                        Click="ButtonOpenFolder_Click"
-                                        HorizontalAlignment="Left"/>
-                                <TextBlock Text="将表情包图片（PNG/JPG/GIF）放入对应心情的文件夹：Happy（开心）、Normal（正常）、PoorCondition（状态不佳）、Ill（生病）" 
-                                         Style="{StaticResource DescriptionText}"
-                                         Margin="0,12,0,0"/>
+                        <!-- 表情包目录 -->
+                        <GroupBox Header="表情包目录" Margin="0,0,0,20">
+                            <StackPanel Margin="10">
+                                <TextBlock x:Name="TextBlockImagePath" Text="DIY_Expression/" FontFamily="Consolas" Background="#F5F5F5" Padding="5" Margin="0,5"/>
+                                <Button x:Name="ButtonOpenFolder" Content="📁 打开表情包文件夹" Width="200" HorizontalAlignment="Left" Margin="0,5"
+                                      Click="ButtonOpenFolder_Click"/>
                             </StackPanel>
-                        </Border>
+                        </GroupBox>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
 
-            <!-- 调试 Tab -->
-            <TabItem Header="🔧 调试" Style="{StaticResource ModernTabItem}">
-                <Grid Margin="24,20">
+            <!-- LLM情感分析 Tab -->
+            <TabItem Header="🤖 LLM情感分析">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
+                    <StackPanel>
+                        <!-- LLM功能开关 -->
+                        <GroupBox Header="LLM情感分析" Margin="0,0,0,20">
+                            <StackPanel Margin="10">
+                                <CheckBox x:Name="CheckBoxEmotionAnalysis" Content="启用LLM情感分析" Margin="0,5"
+                                        Checked="CheckBoxEmotionAnalysis_Changed" Unchecked="CheckBoxEmotionAnalysis_Changed"/>
+                                <CheckBox x:Name="CheckBoxAccurateImageMatching" Content="更加精确的使用表情包" Margin="0,5"
+                                        Checked="CheckBoxAccurateImageMatching_Changed" Unchecked="CheckBoxAccurateImageMatching_Changed"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- LLM提供商选择 -->
+                        <GroupBox Header="LLM提供商" Margin="0,0,0,20">
+                            <StackPanel Margin="10">
+                                <ComboBox x:Name="ComboBoxLLMProvider" Margin="0,5" SelectionChanged="ComboBoxLLMProvider_SelectionChanged">
+                                    <ComboBoxItem Content="OpenAI" Tag="openai"/>
+                                    <ComboBoxItem Content="Google Gemini" Tag="gemini"/>
+                                    <ComboBoxItem Content="Ollama (本地)" Tag="ollama"/>
+                                </ComboBox>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- OpenAI配置 -->
+                        <GroupBox x:Name="PanelOpenAI" Header="OpenAI 配置" Margin="0,0,0,20">
+                            <StackPanel Margin="10">
+                                <TextBlock Text="API Key:" Margin="0,5,0,2"/>
+                                <TextBox x:Name="TextBoxOpenAIKey" Margin="0,0,0,10" TextChanged="TextBoxOpenAIKey_TextChanged"/>
+                                <TextBlock Text="Base URL:" Margin="0,5,0,2"/>
+                                <TextBox x:Name="TextBoxOpenAIBaseUrl" Text="https://api.openai.com/v1" Margin="0,0,0,10" TextChanged="TextBoxOpenAIBaseUrl_TextChanged"/>
+                                <TextBlock Text="模型:" Margin="0,5,0,2"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <ComboBox x:Name="ComboBoxOpenAIModel" Width="200" IsEditable="True" Text="gpt-3.5-turbo"
+                                            SelectionChanged="ComboBoxOpenAIModel_SelectionChanged" LostFocus="ComboBoxOpenAIModel_LostFocus"/>
+                                    <Button x:Name="ButtonFetchOpenAIModels" Content="🔍 获取模型" Margin="10,0,0,0" Click="ButtonFetchOpenAIModels_Click"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Gemini配置 -->
+                        <GroupBox x:Name="PanelGemini" Header="Google Gemini 配置" Margin="0,0,0,20" Visibility="Collapsed">
+                            <StackPanel Margin="10">
+                                <TextBlock Text="API Key:" Margin="0,5,0,2"/>
+                                <TextBox x:Name="TextBoxGeminiKey" Margin="0,0,0,10" TextChanged="TextBoxGeminiKey_TextChanged"/>
+                                <TextBlock Text="Base URL:" Margin="0,5,0,2"/>
+                                <TextBox x:Name="TextBoxGeminiBaseUrl" Text="https://generativelanguage.googleapis.com/v1beta" Margin="0,0,0,10" TextChanged="TextBoxGeminiBaseUrl_TextChanged"/>
+                                <TextBlock Text="模型:" Margin="0,5,0,2"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <ComboBox x:Name="ComboBoxGeminiModel" Width="200" IsEditable="True" Text="gemini-pro"
+                                            SelectionChanged="ComboBoxGeminiModel_SelectionChanged" LostFocus="ComboBoxGeminiModel_LostFocus"/>
+                                    <Button x:Name="ButtonFetchGeminiModels" Content="🔍 获取模型" Margin="10,0,0,0" Click="ButtonFetchGeminiModels_Click"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- Ollama配置 -->
+                        <GroupBox x:Name="PanelOllama" Header="Ollama 配置" Margin="0,0,0,20" Visibility="Collapsed">
+                            <StackPanel Margin="10">
+                                <TextBlock Text="Base URL:" Margin="0,5,0,2"/>
+                                <TextBox x:Name="TextBoxOllamaBaseUrl" Text="http://localhost:11434" Margin="0,0,0,10" TextChanged="TextBoxOllamaBaseUrl_TextChanged"/>
+                                <TextBlock Text="模型:" Margin="0,5,0,2"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <ComboBox x:Name="ComboBoxOllamaModel" Width="200" IsEditable="True" Text="llama2"
+                                            SelectionChanged="ComboBoxOllamaModel_SelectionChanged" LostFocus="ComboBoxOllamaModel_LostFocus"/>
+                                    <Button x:Name="ButtonFetchOllamaModels" Content="🔍 获取模型" Margin="10,0,0,0" Click="ButtonFetchOllamaModels_Click"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- 标签管理 Tab -->
+            <TabItem Header="🏷️ 标签管理">
+                <Grid Margin="20">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="16"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="16"/>
                         <RowDefinition Height="*"/>
-                        <RowDefinition Height="16"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    
-                    <!-- 调试模式开关卡片 -->
-                    <Border Grid.Row="0" Style="{StaticResource SettingCard}" Margin="0">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="调试模式" 
-                                         FontSize="14" 
-                                         FontWeight="Medium" 
-                                         Foreground="#333333"/>
-                                <TextBlock Text="开启后将输出详细的调试日志到控制台" 
-                                         Style="{StaticResource DescriptionText}"
-                                         Margin="0,4,0,0"/>
-                            </StackPanel>
-                            <pu:Switch x:Name="SwitchDebugMode" 
-                                     Grid.Column="1"
-                                     Background="Transparent"
-                                     BorderBrush="#D0D0D0"
-                                     BoxHeight="24" 
-                                     BoxWidth="48"
-                                     CheckedBackground="#0078D4"
-                                     CheckedBorderBrush="#0078D4"
-                                     CheckedToggleBrush="White"
-                                     ToggleBrush="#999999"
-                                     ToggleShadowColor="{x:Null}"
-                                     ToggleSize="20"
-                                     Checked="SwitchDebugMode_Changed"
-                                     Unchecked="SwitchDebugMode_Changed"
-                                     VerticalAlignment="Center"/>
-                        </Grid>
-                    </Border>
 
-                    <!-- 日志等级控制卡片 -->
-                    <Border Grid.Row="2" Style="{StaticResource SettingCard}" Margin="0">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="12"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-                            
-                            <!-- 日志等级选择 -->
-                            <StackPanel Grid.Row="0">
-                                <TextBlock Text="日志等级" 
-                                         FontSize="14" 
-                                         FontWeight="Medium" 
-                                         Foreground="#333333"/>
-                                <TextBlock Text="选择要显示的最低日志等级" 
-                                         Style="{StaticResource DescriptionText}"
-                                         Margin="0,4,0,0"/>
-                            </StackPanel>
-                            
-                            <ComboBox x:Name="ComboBoxLogLevel" 
-                                    Grid.Row="0"
-                                    HorizontalAlignment="Right"
-                                    VerticalAlignment="Center"
-                                    Width="120"
-                                    SelectionChanged="ComboBoxLogLevel_SelectionChanged">
-                                <ComboBoxItem Content="Debug" Tag="0"/>
-                                <ComboBoxItem Content="Info" Tag="1"/>
-                                <ComboBoxItem Content="Warning" Tag="2"/>
-                                <ComboBoxItem Content="Error" Tag="3"/>
-                            </ComboBox>
-                            
-                            <!-- 文件日志开关 -->
-                            <Grid Grid.Row="2">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="文件日志" 
-                                             FontSize="14" 
-                                             FontWeight="Medium" 
-                                             Foreground="#333333"/>
-                                    <TextBlock Text="将日志保存到文件" 
-                                             Style="{StaticResource DescriptionText}"
-                                             Margin="0,4,0,0"/>
+                    <!-- 顶部操作栏 -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,20">
+                        <Button x:Name="ButtonScanImages" Content="🔍 扫描图片" Width="120" Margin="0,0,10,0" Click="ButtonScanImages_Click"/>
+                        <Button x:Name="ButtonSaveLabels" Content="💾 保存标签" Width="120" Click="ButtonSaveLabels_Click"/>
+                    </StackPanel>
+
+                    <!-- 主要内容区域 -->
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="300"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- 左侧：图片树形列表 -->
+                        <GroupBox Grid.Column="0" Header="📁 图片目录" Margin="0,0,10,0">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <TreeView x:Name="TreeViewImages" Background="Transparent" BorderThickness="0" SelectedItemChanged="TreeViewImages_SelectedItemChanged"/>
+                            </ScrollViewer>
+                        </GroupBox>
+
+                        <!-- 右侧：图片预览和标签编辑 -->
+                        <GroupBox Grid.Column="1" Header="🖼️ 图片详情" Margin="10,0,0,0">
+                            <Grid>
+                                <!-- 空状态显示 -->
+                                <StackPanel x:Name="PanelEmptyState" 
+                                          HorizontalAlignment="Center" 
+                                          VerticalAlignment="Center"
+                                          Visibility="Visible">
+                                    <TextBlock Text="📷" FontSize="48" HorizontalAlignment="Center" Foreground="#CCCCCC" Margin="0,0,0,16"/>
+                                    <TextBlock Text="选择图片开始编辑标签" FontSize="16" HorizontalAlignment="Center" Foreground="#999999"/>
                                 </StackPanel>
-                                <pu:Switch x:Name="SwitchFileLogging" 
-                                         Grid.Column="1"
-                                         Background="Transparent"
-                                         BorderBrush="#D0D0D0"
-                                         BoxHeight="24" 
-                                         BoxWidth="48"
-                                         CheckedBackground="#0078D4"
-                                         CheckedBorderBrush="#0078D4"
-                                         CheckedToggleBrush="White"
-                                         ToggleBrush="#999999"
-                                         ToggleShadowColor="{x:Null}"
-                                         ToggleSize="20"
-                                         Checked="SwitchFileLogging_Changed"
-                                         Unchecked="SwitchFileLogging_Changed"
-                                         VerticalAlignment="Center"/>
+
+                                <!-- 图片详情面板 -->
+                                <StackPanel x:Name="PanelImageDetails" Visibility="Collapsed">
+                                    <TextBlock x:Name="TextBlockImageTitle" Text="🖼️ 选择图片查看预览" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
+                                    
+                                    <!-- 图片预览 -->
+                                    <Border Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="1" Padding="8" Margin="0,0,0,10" MaxHeight="200">
+                                        <Image x:Name="ImagePreview" Stretch="Uniform" StretchDirection="DownOnly"/>
+                                    </Border>
+
+                                    <!-- 图片信息 -->
+                                    <TextBlock x:Name="TextBlockFileName" Text="文件名: " FontSize="12" Foreground="#666666" Margin="0,0,0,4"/>
+                                    <TextBlock x:Name="TextBlockFileSize" Text="大小: " FontSize="12" Foreground="#666666" Margin="0,0,0,10"/>
+                                    
+                                    <!-- 标签编辑区域 -->
+                                    <TextBlock Text="🏷️ 图片标签" FontSize="14" FontWeight="Bold" Margin="0,0,0,5"/>
+                                    <TextBlock Text="用逗号分隔多个标签，如：开心,笑脸,高兴" FontSize="12" Foreground="#999999" Margin="0,0,0,5"/>
+                                    <TextBox x:Name="TextBoxImageTags" Height="60" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextChanged="TextBoxImageTags_TextChanged" Margin="0,0,0,10"/>
+                                    
+                                    <!-- 心情选择 -->
+                                    <TextBlock Text="💭 心情分类" FontSize="14" FontWeight="Bold" Margin="0,0,0,5"/>
+                                    <TextBlock Text="选择此图片对应的心情，未选择时作为泛用表情包" FontSize="12" Foreground="#999999" Margin="0,0,0,5"/>
+                                    <ComboBox x:Name="ComboBoxEmotion" SelectionChanged="ComboBoxEmotion_SelectionChanged">
+                                        <ComboBoxItem Content="泛用 (General)" Tag="general"/>
+                                        <ComboBoxItem Content="开心 (Happy)" Tag="happy"/>
+                                        <ComboBoxItem Content="正常 (Normal)" Tag="normal"/>
+                                        <ComboBoxItem Content="状态不佳 (Poor)" Tag="poor"/>
+                                        <ComboBoxItem Content="生病 (Ill)" Tag="ill"/>
+                                    </ComboBox>
+                                </StackPanel>
                             </Grid>
-                        </Grid>
+                        </GroupBox>
+                    </Grid>
+
+                    <!-- 底部状态栏 -->
+                    <Border Grid.Row="2" Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="1" Padding="10" Margin="0,20,0,0">
+                        <TextBlock x:Name="TextBlockStatus" Text="准备就绪" FontSize="12" Foreground="#666666"/>
                     </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- 调试 Tab -->
+            <TabItem Header="🔧 调试">
+                <Grid Margin="20">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- 调试设置 -->
+                    <GroupBox Grid.Row="0" Header="调试设置" Margin="0,0,0,20">
+                        <StackPanel Margin="10">
+                            <CheckBox x:Name="CheckBoxDebugMode" Content="调试模式" Margin="0,5" Checked="CheckBoxDebugMode_Changed" Unchecked="CheckBoxDebugMode_Changed"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <TextBlock Text="日志等级:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <ComboBox x:Name="ComboBoxLogLevel" Width="120" SelectionChanged="ComboBoxLogLevel_SelectionChanged">
+                                    <ComboBoxItem Content="Debug" Tag="0"/>
+                                    <ComboBoxItem Content="Info" Tag="1"/>
+                                    <ComboBoxItem Content="Warning" Tag="2"/>
+                                    <ComboBoxItem Content="Error" Tag="3"/>
+                                </ComboBox>
+                                <CheckBox x:Name="CheckBoxFileLogging" Content="文件日志" Margin="20,0,0,0" Checked="SwitchFileLogging_Changed" Unchecked="SwitchFileLogging_Changed"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </GroupBox>
 
                     <!-- 日志显示区域 -->
-                    <Border Grid.Row="4" 
-                            Background="White"
-                            BorderBrush="#E0E0E0" 
-                            BorderThickness="1" 
-                            CornerRadius="8">
-                        <Border.Effect>
-                            <DropShadowEffect Color="#000000" Opacity="0.05" BlurRadius="8" ShadowDepth="2" Direction="270"/>
-                        </Border.Effect>
+                    <GroupBox Grid.Row="2" Header="📋 调试日志">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
                             
-                            <!-- 日志标题栏 -->
-                            <Border Grid.Row="0" 
-                                    Background="#F8F8F8" 
-                                    BorderBrush="#E0E0E0"
-                                    BorderThickness="0,0,0,1"
-                                    CornerRadius="8,8,0,0"
-                                    Padding="16,12">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" 
-                                             Text="📋 调试日志" 
-                                             FontSize="14"
-                                             FontWeight="SemiBold" 
-                                             Foreground="#333333"
-                                             VerticalAlignment="Center"/>
-                                    <Button Grid.Column="1"
-                                            x:Name="ButtonClearLog"
-                                            Content="🗑️ 清空"
-                                            Padding="12,6"
-                                            FontSize="12"
-                                            Background="#F3F3F3"
-                                            Foreground="#666666"
-                                            BorderBrush="#D0D0D0"
-                                            BorderThickness="1"
-                                            Cursor="Hand"
-                                            Click="ButtonClearLog_Click">
-                                        <Button.Template>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border x:Name="border"
-                                                        Background="{TemplateBinding Background}"
-                                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                                        CornerRadius="4"
-                                                        Padding="{TemplateBinding Padding}">
-                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="border" Property="Background" Value="#E8E8E8"/>
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Button.Template>
-                                    </Button>
-                                </Grid>
-                            </Border>
+                            <Button Grid.Row="0" x:Name="ButtonClearLog" Content="🗑️ 清空日志" Width="100" HorizontalAlignment="Right" Margin="0,0,0,10" Click="ButtonClearLog_Click"/>
                             
-                            <!-- 日志内容 -->
-                            <ScrollViewer Grid.Row="1" 
-                                        x:Name="LogScrollViewer"
-                                        VerticalScrollBarVisibility="Auto"
-                                        HorizontalScrollBarVisibility="Auto"
-                                        Background="#FAFAFA">
-                                <TextBox x:Name="TextBoxLog"
-                                       IsReadOnly="True"
-                                       TextWrapping="Wrap"
-                                       BorderThickness="0"
-                                       Background="Transparent"
-                                       Padding="16"
-                                       FontFamily="Consolas"
-                                       FontSize="11"
-                                       Foreground="#333333"
-                                       Text="日志将显示在这里..."/>
+                            <ScrollViewer Grid.Row="1" x:Name="LogScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                                <TextBox x:Name="TextBoxLog" IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0" Background="Transparent" FontFamily="Consolas" FontSize="11" Text="日志将显示在这里..."/>
                             </ScrollViewer>
                         </Grid>
-                    </Border>
+                    </GroupBox>
                 </Grid>
-            </TabItem>
-
-            <!-- LLM情感分析 Tab -->
-            <TabItem Header="🤖 LLM情感分析" Style="{StaticResource ModernTabItem}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20">
-                    <StackPanel>
-                        <!-- 功能开关卡片 -->
-                        <Border Style="{StaticResource SettingCard}">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="启用LLM情感分析" 
-                                             FontSize="14" 
-                                             FontWeight="Medium" 
-                                             Foreground="#333333"/>
-                                    <TextBlock Text="使用大语言模型分析VPet说话内容，自动选择匹配的表情包" 
-                                             Style="{StaticResource DescriptionText}"
-                                             Margin="0,4,0,0"/>
-                                </StackPanel>
-                                <pu:Switch x:Name="SwitchEmotionAnalysis" 
-                                         Grid.Column="1"
-                                         Background="Transparent"
-                                         BorderBrush="#D0D0D0"
-                                         BoxHeight="24" 
-                                         BoxWidth="48"
-                                         CheckedBackground="#0078D4"
-                                         CheckedBorderBrush="#0078D4"
-                                         CheckedToggleBrush="White"
-                                         ToggleBrush="#999999"
-                                         ToggleShadowColor="{x:Null}"
-                                         ToggleSize="20"
-                                         Checked="SwitchEmotionAnalysis_Changed"
-                                         Unchecked="SwitchEmotionAnalysis_Changed"
-                                         VerticalAlignment="Center"/>
-                            </Grid>
-                        </Border>
-
-                        <!-- 精确表情包匹配卡片 -->
-                        <Border Style="{StaticResource SettingCard}">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0">
-                                    <TextBlock Text="更加精确的使用表情包" 
-                                             FontSize="14" 
-                                             FontWeight="Medium" 
-                                             Foreground="#333333"/>
-                                    <TextBlock Text="使用label.json标签文件进行精确匹配，让LLM返回标签并匹配对应的表情包图片" 
-                                             Style="{StaticResource DescriptionText}"
-                                             Margin="0,4,0,0"/>
-                                </StackPanel>
-                                <pu:Switch x:Name="SwitchAccurateImageMatching" 
-                                         Grid.Column="1"
-                                         Background="Transparent"
-                                         BorderBrush="#D0D0D0"
-                                         BoxHeight="24" 
-                                         BoxWidth="48"
-                                         CheckedBackground="#0078D4"
-                                         CheckedBorderBrush="#0078D4"
-                                         CheckedToggleBrush="White"
-                                         ToggleBrush="#999999"
-                                         ToggleShadowColor="{x:Null}"
-                                         ToggleSize="20"
-                                         Checked="SwitchAccurateImageMatching_Changed"
-                                         Unchecked="SwitchAccurateImageMatching_Changed"
-                                         VerticalAlignment="Center"/>
-                            </Grid>
-                        </Border>
-
-                        <!-- LLM提供商选择卡片 -->
-                        <Border Style="{StaticResource SettingCard}">
-                            <StackPanel>
-                                <TextBlock Text="LLM提供商" Style="{StaticResource SectionTitle}"/>
-                                <ComboBox x:Name="ComboBoxLLMProvider"
-                                        FontSize="14"
-                                        Padding="12,8"
-                                        SelectionChanged="ComboBoxLLMProvider_SelectionChanged">
-                                    <ComboBoxItem Content="OpenAI" Tag="openai"/>
-                                    <ComboBoxItem Content="Google Gemini" Tag="gemini"/>
-                                    <ComboBoxItem Content="Ollama (本地)" Tag="ollama"/>
-                                </ComboBox>
-                                <TextBlock Text="选择用于情感分析的LLM服务" 
-                                         Style="{StaticResource DescriptionText}"
-                                         Margin="0,8,0,0"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- OpenAI配置卡片 -->
-                        <Border x:Name="PanelOpenAI" Style="{StaticResource SettingCard}">
-                            <StackPanel>
-                                <TextBlock Text="OpenAI 配置" Style="{StaticResource SectionTitle}"/>
-                                
-                                <TextBlock Text="API Key" 
-                                         FontSize="13" 
-                                         Foreground="#666666"
-                                         Margin="0,0,0,6"/>
-                                <TextBox x:Name="TextBoxOpenAIKey"
-                                       FontSize="13"
-                                       Padding="10,8"
-                                       FontFamily="Consolas"
-                                       TextChanged="TextBoxOpenAIKey_TextChanged"/>
-                                
-                                <TextBlock Text="Base URL (可选)" 
-                                         FontSize="13" 
-                                         Foreground="#666666"
-                                         Margin="0,12,0,6"/>
-                                <TextBox x:Name="TextBoxOpenAIBaseUrl"
-                                       FontSize="13"
-                                       Padding="10,8"
-                                       FontFamily="Consolas"
-                                       Text="https://api.openai.com/v1"
-                                       TextChanged="TextBoxOpenAIBaseUrl_TextChanged"/>
-                                
-                                <TextBlock Text="💡 支持 OpenAI、OpenRouter、OneAPI 等兼容 API" 
-                                         Style="{StaticResource DescriptionText}"
-                                         Margin="0,4,0,0"/>
-                                
-                                <Grid Margin="0,12,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0">
-                                        <TextBlock Text="模型" 
-                                                 FontSize="13" 
-                                                 Foreground="#666666"
-                                                 Margin="0,0,0,6"/>
-                                        <ComboBox x:Name="ComboBoxOpenAIModel"
-                                                FontSize="13"
-                                                Padding="10,8"
-                                                IsEditable="True"
-                                                Text="gpt-3.5-turbo"
-                                                SelectionChanged="ComboBoxOpenAIModel_SelectionChanged"
-                                                LostFocus="ComboBoxOpenAIModel_LostFocus"/>
-                                    </StackPanel>
-                                    <Button Grid.Column="1"
-                                            x:Name="ButtonFetchOpenAIModels"
-                                            Content="🔍 获取模型"
-                                            Style="{StaticResource SecondaryButton}"
-                                            Click="ButtonFetchOpenAIModels_Click"
-                                            VerticalAlignment="Bottom"
-                                            Margin="8,0,0,0"
-                                            Padding="12,8"/>
-                                </Grid>
-                                
-                                <TextBlock TextWrapping="Wrap"
-                                         Style="{StaticResource DescriptionText}"
-                                         Margin="0,8,0,0">
-                                    <Run Text="💡 获取API Key: https://platform.openai.com/api-keys" />
-                                    <LineBreak/>
-                                    <Run Text="第三方API: OpenRouter (openrouter.ai/api/v1) | OneAPI (your-domain/v1)" />
-                                </TextBlock>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Gemini配置卡片 -->
-                        <Border x:Name="PanelGemini" Style="{StaticResource SettingCard}" Visibility="Collapsed">
-                            <StackPanel>
-                                <TextBlock Text="Google Gemini 配置" Style="{StaticResource SectionTitle}"/>
-                                
-                                <TextBlock Text="API Key" 
-                                         FontSize="13" 
-                                         Foreground="#666666"
-                                         Margin="0,0,0,6"/>
-                                <TextBox x:Name="TextBoxGeminiKey"
-                                       FontSize="13"
-                                       Padding="10,8"
-                                       FontFamily="Consolas"
-                                       TextChanged="TextBoxGeminiKey_TextChanged"/>
-                                
-                                <TextBlock Text="Base URL (可选)" 
-                                         FontSize="13" 
-                                         Foreground="#666666"
-                                         Margin="0,12,0,6"/>
-                                <TextBox x:Name="TextBoxGeminiBaseUrl"
-                                       FontSize="13"
-                                       Padding="10,8"
-                                       FontFamily="Consolas"
-                                       Text="https://generativelanguage.googleapis.com/v1beta"
-                                       TextChanged="TextBoxGeminiBaseUrl_TextChanged"/>
-                                
-                                <Grid Margin="0,12,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0">
-                                        <TextBlock Text="模型" 
-                                                 FontSize="13" 
-                                                 Foreground="#666666"
-                                                 Margin="0,0,0,6"/>
-                                        <ComboBox x:Name="ComboBoxGeminiModel"
-                                                FontSize="13"
-                                                Padding="10,8"
-                                                IsEditable="True"
-                                                Text="gemini-pro"
-                                                SelectionChanged="ComboBoxGeminiModel_SelectionChanged"
-                                                LostFocus="ComboBoxGeminiModel_LostFocus"/>
-                                    </StackPanel>
-                                    <Button Grid.Column="1"
-                                            x:Name="ButtonFetchGeminiModels"
-                                            Content="🔍 获取模型"
-                                            Style="{StaticResource SecondaryButton}"
-                                            Click="ButtonFetchGeminiModels_Click"
-                                            VerticalAlignment="Bottom"
-                                            Margin="8,0,0,0"
-                                            Padding="12,8"/>
-                                </Grid>
-                                
-                                <TextBlock Text="💡 获取API Key: https://makersuite.google.com/app/apikey" 
-                                         Style="{StaticResource DescriptionText}"
-                                         Margin="0,8,0,0"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Ollama配置卡片 -->
-                        <Border x:Name="PanelOllama" Style="{StaticResource SettingCard}" Visibility="Collapsed">
-                            <StackPanel>
-                                <TextBlock Text="Ollama 配置" Style="{StaticResource SectionTitle}"/>
-                                
-                                <TextBlock Text="Base URL" 
-                                         FontSize="13" 
-                                         Foreground="#666666"
-                                         Margin="0,0,0,6"/>
-                                <TextBox x:Name="TextBoxOllamaBaseUrl"
-                                       FontSize="13"
-                                       Padding="10,8"
-                                       FontFamily="Consolas"
-                                       Text="http://localhost:11434"
-                                       TextChanged="TextBoxOllamaBaseUrl_TextChanged"/>
-                                
-                                <Grid Margin="0,12,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0">
-                                        <TextBlock Text="模型" 
-                                                 FontSize="13" 
-                                                 Foreground="#666666"
-                                                 Margin="0,0,0,6"/>
-                                        <ComboBox x:Name="ComboBoxOllamaModel"
-                                                FontSize="13"
-                                                Padding="10,8"
-                                                IsEditable="True"
-                                                Text="llama2"
-                                                SelectionChanged="ComboBoxOllamaModel_SelectionChanged"
-                                                LostFocus="ComboBoxOllamaModel_LostFocus"/>
-                                    </StackPanel>
-                                    <Button Grid.Column="1"
-                                            x:Name="ButtonFetchOllamaModels"
-                                            Content="🔍 获取模型"
-                                            Style="{StaticResource SecondaryButton}"
-                                            Click="ButtonFetchOllamaModels_Click"
-                                            VerticalAlignment="Bottom"
-                                            Margin="8,0,0,0"
-                                            Padding="12,8"/>
-                                </Grid>
-                                
-                                <TextBlock Text="💡 确保Ollama服务已在本地运行，推荐模型：llama3, mistral, llama2" 
-                                         Style="{StaticResource DescriptionText}"
-                                         Margin="0,8,0,0"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- 标签文件说明卡片 -->
-                        <!-- <Border Style="{StaticResource SettingCard}">
-                            <StackPanel>
-                                <TextBlock Text="📝 标签文件配置" Style="{StaticResource SectionTitle}"/>
-                                <TextBlock TextWrapping="Wrap" 
-                                         FontSize="13"
-                                         Foreground="#666666"
-                                         LineHeight="20">
-                                    <Run Text="在表情包目录中创建 "/>
-                                    <Run Text="label.txt" FontWeight="SemiBold" FontFamily="Consolas" Foreground="#0078D4"/>
-                                    <Run Text=" 文件，格式："/>
-                                    <LineBreak/>
-                                    <LineBreak/>
-                                    <Run Text="文件名.png: 标签1, 标签2, 标签3" FontFamily="Consolas" Background="#F5F5F5"/>
-                                    <LineBreak/>
-                                    <LineBreak/>
-                                    <Run Text="示例："/>
-                                    <LineBreak/>
-                                    <Run Text="happy_1.png: happy, joyful, excited, 开心" FontFamily="Consolas" Background="#F5F5F5"/>
-                                    <LineBreak/>
-                                    <Run Text="sad_1.png: sad, unhappy, depressed, 伤心" FontFamily="Consolas" Background="#F5F5F5"/>
-                                </TextBlock>
-                            </StackPanel>
-                        </Border> -->
-                    </StackPanel>
-                </ScrollViewer>
             </TabItem>
         </TabControl>
         
         <!-- 底部按钮栏 -->
-        <Border Grid.Row="2" 
-                Background="White" 
-                BorderBrush="#E0E0E0" 
-                BorderThickness="0,1,0,0"
-                Padding="24,16">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                
-                <!-- 左侧测试按钮 -->
-                <StackPanel Grid.Column="0" 
-                            Orientation="Horizontal"
-                            HorizontalAlignment="Left">
-                    <Button x:Name="ButtonTestDisplay"
-                            Content="🎭 测试显示表情包"
-                            Style="{StaticResource SecondaryButton}"
-                            Click="ButtonTestDisplay_Click"
-                            ToolTip="立即显示一个随机表情包进行测试"/>
-                </StackPanel>
-                
-                <!-- 右侧操作按钮 -->
-                <StackPanel Grid.Column="1" 
-                            Orientation="Horizontal">
-                    <Button x:Name="ButtonSave"
-                            Content="💾 保存设置"
-                            Style="{StaticResource PrimaryButton}"
-                            Click="ButtonSave_Click"
-                            Margin="0,0,12,0"/>
-                    
-                    <Button x:Name="ButtonReset"
-                            Content="🔄 重置"
-                            Style="{StaticResource SecondaryButton}"
-                            Click="ButtonReset_Click"
-                            Margin="0,0,12,0"/>
-                    
-                    <Button x:Name="ButtonCancel"
-                            Content="✖️ 取消"
-                            Style="{StaticResource SecondaryButton}"
-                            Click="ButtonCancel_Click"/>
-                </StackPanel>
-            </Grid>
-        </Border>
+        <Grid VerticalAlignment="Bottom" Background="White" Height="60">
+            <Border BorderBrush="#E0E0E0" BorderThickness="0,1,0,0"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="20">
+                <Button x:Name="ButtonTestDisplay" Content="🎭 测试显示" Width="100" Margin="0,0,10,0" Click="ButtonTestDisplay_Click"/>
+                <Button x:Name="ButtonSave" Content="💾 保存" Width="80" Margin="0,0,10,0" Click="ButtonSave_Click"/>
+                <Button x:Name="ButtonReset" Content="🔄 重置" Width="80" Margin="0,0,10,0" Click="ButtonReset_Click"/>
+                <Button x:Name="ButtonCancel" Content="❌ 取消" Width="80" Click="ButtonCancel_Click"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </pu:WindowX>
