@@ -43,12 +43,15 @@ namespace VPet.Plugin.Image.EmotionAnalysis.LLMClient
         private readonly string _embeddingModel;
         private readonly HttpClient _httpClient;
 
-        public OpenAIClient(string apiKey, string baseUrl = "https://api.openai.com/v1", string model = "gpt-3.5-turbo", string embeddingModel = "text-embedding-3-small")
+        private readonly ImageMgr _imageMgr;
+
+        public OpenAIClient(string apiKey, string baseUrl = "https://api.openai.com/v1", string model = "gpt-3.5-turbo", string embeddingModel = "text-embedding-3-small", ImageMgr imageMgr = null)
         {
             _apiKey = apiKey;
             _baseUrl = baseUrl.TrimEnd('/');
             _model = model;
             _embeddingModel = embeddingModel;
+            _imageMgr = imageMgr;
             _httpClient = new HttpClient();
             _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
         }
@@ -69,13 +72,41 @@ namespace VPet.Plugin.Image.EmotionAnalysis.LLMClient
                     max_tokens = 50
                 };
 
-                var json = JsonSerializer.Serialize(requestBody);
+                var json = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions { WriteIndented = true });
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
 
+                // 记录完整的HTTP请求信息
+                _imageMgr?.LogDebug("OpenAI", "=== OpenAI HTTP 请求开始 ===");
+                _imageMgr?.LogDebug("OpenAI", $"URL: {_baseUrl}/chat/completions");
+                _imageMgr?.LogDebug("OpenAI", $"Method: POST");
+                _imageMgr?.LogDebug("OpenAI", $"Content-Type: application/json");
+                _imageMgr?.LogDebug("OpenAI", $"Authorization: Bearer {(_apiKey?.Length > 10 ? _apiKey.Substring(0, 10) + "..." : _apiKey)}");
+                _imageMgr?.LogDebug("OpenAI", "请求体:");
+                _imageMgr?.LogDebug("OpenAI", json);
+                _imageMgr?.LogDebug("OpenAI", "=== OpenAI HTTP 请求结束 ===");
+
                 var response = await _httpClient.PostAsync($"{_baseUrl}/chat/completions", content);
+                
+                var responseJson = await response.Content.ReadAsStringAsync();
+                
+                // 记录完整的HTTP响应信息
+                _imageMgr?.LogDebug("OpenAI", "=== OpenAI HTTP 响应开始 ===");
+                _imageMgr?.LogDebug("OpenAI", $"状态码: {response.StatusCode}");
+                _imageMgr?.LogDebug("OpenAI", $"响应头:");
+                foreach (var header in response.Headers)
+                {
+                    _imageMgr?.LogDebug("OpenAI", $"  {header.Key}: {string.Join(", ", header.Value)}");
+                }
+                foreach (var header in response.Content.Headers)
+                {
+                    _imageMgr?.LogDebug("OpenAI", $"  {header.Key}: {string.Join(", ", header.Value)}");
+                }
+                _imageMgr?.LogDebug("OpenAI", $"响应体:");
+                _imageMgr?.LogDebug("OpenAI", responseJson);
+                _imageMgr?.LogDebug("OpenAI", "=== OpenAI HTTP 响应结束 ===");
+
                 response.EnsureSuccessStatusCode();
 
-                var responseJson = await response.Content.ReadAsStringAsync();
                 var responseObj = JsonSerializer.Deserialize<JsonElement>(responseJson);
 
                 var messageContent = responseObj
@@ -88,7 +119,8 @@ namespace VPet.Plugin.Image.EmotionAnalysis.LLMClient
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[OpenAI] Error: {ex.Message}");
+                _imageMgr?.LogError("OpenAI", $"Error: {ex.Message}");
+                _imageMgr?.LogDebug("OpenAI", $"StackTrace: {ex.StackTrace}");
                 throw;
             }
         }

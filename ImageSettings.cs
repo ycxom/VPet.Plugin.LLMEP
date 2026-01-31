@@ -46,9 +46,39 @@ namespace VPet.Plugin.Image
         public bool DebugMode { get; set; } = true;
 
         /// <summary>
+        /// 日志等级：0=Debug, 1=Info, 2=Warning, 3=Error
+        /// </summary>
+        public int LogLevel { get; set; } = 1; // 默认Info级别
+
+        /// <summary>
+        /// 是否启用文件日志
+        /// </summary>
+        public bool EnableFileLogging { get; set; } = true;
+
+        /// <summary>
         /// 情感分析设置
         /// </summary>
         public EmotionAnalysisSettings EmotionAnalysis { get; set; } = new EmotionAnalysisSettings();
+
+        /// <summary>
+        /// 是否启用精确表情包匹配
+        /// </summary>
+        public bool UseAccurateImageMatching { get; set; } = false;
+
+        /// <summary>
+        /// 是否启用时间触发模式
+        /// </summary>
+        public bool UseTimeTrigger { get; set; } = true;
+
+        /// <summary>
+        /// 气泡触发模式：true=启用基于概率的气泡触发，false=禁用气泡触发
+        /// </summary>
+        public bool UseBubbleTrigger { get; set; } = false;
+
+        /// <summary>
+        /// 气泡触发概率：VPet每次说话时显示表情包的概率（百分比，1-100）
+        /// </summary>
+        public int BubbleTriggerProbability { get; set; } = 20;
 
         /// <summary>
         /// 克隆设置对象
@@ -64,7 +94,13 @@ namespace VPet.Plugin.Image
                 DisplayInterval = this.DisplayInterval,
                 UseRandomInterval = this.UseRandomInterval,
                 DebugMode = this.DebugMode,
-                EmotionAnalysis = this.EmotionAnalysis?.Clone()
+                LogLevel = this.LogLevel,
+                EnableFileLogging = this.EnableFileLogging,
+                EmotionAnalysis = this.EmotionAnalysis?.Clone(),
+                UseTimeTrigger = this.UseTimeTrigger,
+                UseBubbleTrigger = this.UseBubbleTrigger,
+                BubbleTriggerProbability = this.BubbleTriggerProbability,
+                UseAccurateImageMatching = this.UseAccurateImageMatching
             };
         }
 
@@ -82,6 +118,10 @@ namespace VPet.Plugin.Image
                    DisplayInterval == other.DisplayInterval &&
                    UseRandomInterval == other.UseRandomInterval &&
                    DebugMode == other.DebugMode &&
+                   UseTimeTrigger == other.UseTimeTrigger &&
+                   UseBubbleTrigger == other.UseBubbleTrigger &&
+                   BubbleTriggerProbability == other.BubbleTriggerProbability &&
+                   UseAccurateImageMatching == other.UseAccurateImageMatching &&
                    (EmotionAnalysis == null && other.EmotionAnalysis == null ||
                     EmotionAnalysis != null && EmotionAnalysis.Equals(other.EmotionAnalysis));
         }
@@ -162,6 +202,19 @@ namespace VPet.Plugin.Image
         public int GetDisplayDurationMs()
         {
             return DisplayDuration * 1000;
+        }
+
+        /// <summary>
+        /// 检查是否应该触发气泡表情包（基于概率）
+        /// </summary>
+        public bool ShouldTriggerBubble()
+        {
+            if (!UseBubbleTrigger || BubbleTriggerProbability <= 0)
+                return false;
+
+            var random = new Random();
+            int randomValue = random.Next(1, 101); // 1-100
+            return randomValue <= BubbleTriggerProbability;
         }
     }
 }

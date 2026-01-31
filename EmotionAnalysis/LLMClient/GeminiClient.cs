@@ -45,12 +45,15 @@ namespace VPet.Plugin.Image.EmotionAnalysis.LLMClient
         private const string DEFAULT_MODEL = "gemini-pro";
         private const string DEFAULT_EMBEDDING_MODEL = "embedding-001";
 
-        public GeminiClient(string apiKey, string baseUrl = "https://generativelanguage.googleapis.com/v1beta", string model = null, string embeddingModel = null)
+        private readonly ImageMgr _imageMgr;
+
+        public GeminiClient(string apiKey, string baseUrl = "https://generativelanguage.googleapis.com/v1beta", string model = null, string embeddingModel = null, ImageMgr imageMgr = null)
         {
             _apiKey = apiKey;
             _baseUrl = baseUrl.TrimEnd('/');
             _model = model ?? DEFAULT_MODEL;
             _embeddingModel = embeddingModel ?? DEFAULT_EMBEDDING_MODEL;
+            _imageMgr = imageMgr;
             _httpClient = new HttpClient();
             _httpClient.Timeout = TimeSpan.FromSeconds(30);
         }
@@ -84,15 +87,40 @@ namespace VPet.Plugin.Image.EmotionAnalysis.LLMClient
                     }
                 };
 
-                var jsonContent = JsonSerializer.Serialize(requestBody);
+                var jsonContent = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions { WriteIndented = true });
                 var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+                // 记录完整的HTTP请求信息
+                _imageMgr?.LogDebug("Gemini", "=== Gemini HTTP 请求开始 ===");
+                _imageMgr?.LogDebug("Gemini", $"URL: {url}");
+                _imageMgr?.LogDebug("Gemini", $"Method: POST");
+                _imageMgr?.LogDebug("Gemini", $"Content-Type: application/json");
+                _imageMgr?.LogDebug("Gemini", "请求体:");
+                _imageMgr?.LogDebug("Gemini", jsonContent);
+                _imageMgr?.LogDebug("Gemini", "=== Gemini HTTP 请求结束 ===");
 
                 var response = await _httpClient.PostAsync(url, content);
                 var responseContent = await response.Content.ReadAsStringAsync();
 
+                // 记录完整的HTTP响应信息
+                _imageMgr?.LogDebug("Gemini", "=== Gemini HTTP 响应开始 ===");
+                _imageMgr?.LogDebug("Gemini", $"状态码: {response.StatusCode}");
+                _imageMgr?.LogDebug("Gemini", $"响应头:");
+                foreach (var header in response.Headers)
+                {
+                    _imageMgr?.LogDebug("Gemini", $"  {header.Key}: {string.Join(", ", header.Value)}");
+                }
+                foreach (var header in response.Content.Headers)
+                {
+                    _imageMgr?.LogDebug("Gemini", $"  {header.Key}: {string.Join(", ", header.Value)}");
+                }
+                _imageMgr?.LogDebug("Gemini", $"响应体:");
+                _imageMgr?.LogDebug("Gemini", responseContent);
+                _imageMgr?.LogDebug("Gemini", "=== Gemini HTTP 响应结束 ===");
+
                 if (!response.IsSuccessStatusCode)
                 {
-                    Console.WriteLine($"[GeminiClient] API Error: {response.StatusCode} - {responseContent}");
+                    _imageMgr?.LogError("Gemini", $"API Error: {response.StatusCode} - {responseContent}");
                     throw new Exception($"Gemini API error: {response.StatusCode}");
                 }
 
@@ -121,7 +149,7 @@ namespace VPet.Plugin.Image.EmotionAnalysis.LLMClient
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[GeminiClient] Error: {ex.Message}");
+                _imageMgr?.LogError("Gemini", $"Error: {ex.Message}");
                 throw;
             }
         }

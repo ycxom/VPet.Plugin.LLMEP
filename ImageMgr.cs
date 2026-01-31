@@ -9,6 +9,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using VPet.Plugin.Image.EmotionAnalysis;
 using VPet.Plugin.Image.EmotionAnalysis.LLMClient;
+using VPet.Plugin.Image.Utils;
 using VPet_Simulator.Core;
 using VPet_Simulator.Windows.Interface;
 using WpfAnimatedGif;
@@ -28,7 +29,9 @@ namespace VPet.Plugin.Image
         private string settingsPath;
         private ImageSettingWindow winSetting;
 
-        // 日志收集
+        // 新的日志系统（现在使用静态Logger）
+
+        // 旧的日志收集（保持兼容性）
         private List<string> logMessages = new List<string>();
         private const int MaxLogMessages = 1000; // 最多保存1000条日志
 
@@ -43,6 +46,9 @@ namespace VPet.Plugin.Image
         // 气泡文本监听器
         private BubbleTextListener bubbleTextListener;
 
+        // 标签图片匹配器
+        private LabelImageMatcher labelImageMatcher;
+
         public ImageSettings Settings => settings;
 
         public ImageMgr(IMainWindow mainwin) : base(mainwin)
@@ -54,11 +60,40 @@ namespace VPet.Plugin.Image
             InitializeSettings();
         }
 
+        /// <summary>
+        /// 初始化日志系统
+        /// </summary>
+        private void InitializeLogger()
+        {
+            try
+            {
+                string logPath = Path.Combine(LoaddllPath(), "VPet.Plugin.Image.log");
+                Utils.Logger.LogFilePath = logPath;
+                
+                // 根据设置配置日志系统
+                Utils.Logger.SetLogLevel((LogLevel)settings.LogLevel);
+                Utils.Logger.EnableFileLogging = settings.EnableFileLogging;
+                
+                Utils.Logger.Info("Logger", "日志系统初始化完成");
+                Utils.Logger.Debug("Logger", $"日志文件路径: {logPath}");
+                Utils.Logger.Debug("Logger", $"日志等级: {(LogLevel)settings.LogLevel}");
+                Utils.Logger.Debug("Logger", $"文件日志: {(settings.EnableFileLogging ? "启用" : "禁用")}");
+            }
+            catch (Exception ex)
+            {
+                // 如果日志系统初始化失败，回退到旧的日志方法
+                LogMessage($"日志系统初始化失败: {ex.Message}");
+            }
+        }
+
         public override void LoadPlugin()
         {
             try
             {
-                LogMessage("开始加载插件");
+                // 初始化日志系统
+                InitializeLogger();
+                
+                Utils.Logger.Info("Plugin", "开始加载插件");
 
                 // Create ImageUI
                 image = new ImageUI(this);
@@ -78,18 +113,18 @@ namespace VPet.Plugin.Image
                 // 初始化气泡文本监听器
                 InitializeBubbleTextListener();
 
-                // Create and setup timer only if enabled
-                if (settings.IsEnabled)
+                // Create and setup timer if enabled (根据插件启用状态和时间触发开关)
+                if (settings.IsEnabled && settings.UseTimeTrigger)
                 {
                     StartTimer();
                 }
 
-                LogMessage("插件加载完成");
+                Utils.Logger.Info("Plugin", "插件加载完成");
             }
             catch (Exception ex)
             {
-                LogMessage($"插件加载失败: {ex.Message}");
-                LogMessage($"堆栈跟踪: {ex.StackTrace}");
+                Utils.Logger.Error("Plugin", $"插件加载失败: {ex.Message}");
+                Utils.Logger.Debug("Plugin", $"堆栈跟踪: {ex.StackTrace}");
             }
         }
 
@@ -175,6 +210,10 @@ namespace VPet.Plugin.Image
 
             bool emotionAnalysisChanged = settings.EmotionAnalysis?.EnableLLMEmotionAnalysis != newSettings.EmotionAnalysis?.EnableLLMEmotionAnalysis;
 
+            bool timeTriggerChanged = settings.UseTimeTrigger != newSettings.UseTimeTrigger;
+            bool bubbleTriggerChanged = settings.UseBubbleTrigger != newSettings.UseBubbleTrigger ||
+                                       settings.BubbleTriggerProbability != newSettings.BubbleTriggerProbability;
+
             settings = newSettings.Clone();
 
             // 如果表情包启用状态改变，重新加载图片
@@ -207,14 +246,35 @@ namespace VPet.Plugin.Image
                 }
             }
 
-            // 重新配置定时器
-            if (settings.IsEnabled)
+            // 如果时间触发设置改变，重新配置定时器
+            if (timeTriggerChanged)
+            {
+                LogMessage($"时间触发设置已更改：{(settings.UseTimeTrigger ? "启用" : "禁用")}");
+            }
+
+            // 如果气泡触发设置改变，记录日志
+            if (bubbleTriggerChanged)
+            {
+                LogMessage($"气泡触发设置已更改：{(settings.UseBubbleTrigger ? $"启用（概率: {settings.BubbleTriggerProbability}%）" : "禁用")}");
+            }
+
+            // 配置时间触发器（根据插件启用状态和时间触发开关）
+            if (settings.IsEnabled && settings.UseTimeTrigger)
             {
                 StartTimer();
+                LogMessage("时间触发器已启动");
             }
             else
             {
                 StopTimer();
+                if (!settings.IsEnabled)
+                {
+                    LogMessage("插件未启用，时间触发器已停止");
+                }
+                else if (!settings.UseTimeTrigger)
+                {
+                    LogMessage("时间触发已禁用，时间触发器已停止");
+                }
             }
 
             LogMessage("设置已应用");
@@ -279,10 +339,14 @@ namespace VPet.Plugin.Image
         }
 
         /// <summary>
-        /// 记录日志
+        /// 记录日志（兼容旧版本）
         /// </summary>
         public void LogMessage(string message)
         {
+            // 使用新的日志系统
+            Utils.Logger.Info("Legacy", message);
+            
+            // 保持旧的日志收集（向后兼容）
             var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             var logMessage = $"[{timestamp}] {message}";
 
@@ -303,14 +367,52 @@ namespace VPet.Plugin.Image
         }
 
         /// <summary>
-        /// 获取所有日志
+        /// 记录Debug级别日志
+        /// </summary>
+        public void LogDebug(string category, string message)
+        {
+            Utils.Logger.Debug(category, message);
+        }
+
+        /// <summary>
+        /// 记录Info级别日志
+        /// </summary>
+        public void LogInfo(string category, string message)
+        {
+            Utils.Logger.Info(category, message);
+        }
+
+        /// <summary>
+        /// 记录Warning级别日志
+        /// </summary>
+        public void LogWarning(string category, string message)
+        {
+            Utils.Logger.Warning(category, message);
+        }
+
+        /// <summary>
+        /// 记录Error级别日志
+        /// </summary>
+        public void LogError(string category, string message)
+        {
+            Utils.Logger.Error(category, message);
+        }
+
+        /// <summary>
+        /// 获取所有日志（兼容旧版本）
         /// </summary>
         public List<string> GetLogMessages()
         {
-            lock (logMessages)
-            {
-                return new List<string>(logMessages);
-            }
+            // 使用新的静态日志系统
+            return Utils.Logger.GetFormattedLogs(LogLevel.Info);
+        }
+
+        /// <summary>
+        /// 获取指定等级的日志
+        /// </summary>
+        public List<string> GetLogMessages(LogLevel minLevel)
+        {
+            return Utils.Logger.GetFormattedLogs(minLevel);
         }
 
         /// <summary>
@@ -318,10 +420,7 @@ namespace VPet.Plugin.Image
         /// </summary>
         public void ClearLogs()
         {
-            lock (logMessages)
-            {
-                logMessages.Clear();
-            }
+            Utils.Logger.Clear();
         }
 
         public override void LoadDIY()
@@ -571,46 +670,46 @@ namespace VPet.Plugin.Image
         {
             try
             {
-                LogMessage($"Return_Image: 请求获取 {type} 心情的表情包");
+                LogDebug("ImageMgr", $"请求获取 {type} 心情的表情包");
 
                 if (!imagepath.ContainsKey(type))
                 {
-                    LogMessage($"Return_Image: 未找到 {type} 心情的表情包集合");
+                    LogWarning("ImageMgr", $"未找到 {type} 心情的表情包集合");
                     return null;
                 }
 
                 var imageList = imagepath[type];
                 if (imageList == null || imageList.Count == 0)
                 {
-                    LogMessage($"Return_Image: {type} 心情的表情包集合为空");
+                    LogWarning("ImageMgr", $"{type} 心情的表情包集合为空");
                     return null;
                 }
 
-                LogMessage($"Return_Image: {type} 心情共有 {imageList.Count} 张表情包");
+                LogDebug("ImageMgr", $"{type} 心情共有 {imageList.Count} 张表情包");
 
                 int randomIndex = random.Next(imageList.Count);
                 var selectedImage = imageList[randomIndex];
 
-                LogMessage($"Return_Image: 随机选择第 {randomIndex + 1} 张表情包");
+                LogDebug("ImageMgr", $"随机选择第 {randomIndex + 1} 张表情包");
                 
                 // 安全地获取图片路径（避免线程问题）
                 try
                 {
                     string imagePath = selectedImage?.UriSource?.ToString() ?? "未知";
-                    LogMessage($"Return_Image: 选中的表情包路径: {imagePath}");
+                    LogDebug("ImageMgr", $"选中的表情包路径: {imagePath}");
                 }
                 catch (Exception ex)
                 {
-                    LogMessage($"Return_Image: 获取图片路径时出现线程问题: {ex.Message}");
-                    LogMessage($"Return_Image: 继续返回图片对象");
+                    LogDebug("ImageMgr", $"获取图片路径时出现线程问题: {ex.Message}");
+                    LogDebug("ImageMgr", $"继续返回图片对象");
                 }
 
                 return selectedImage;
             }
             catch (Exception ex)
             {
-                LogMessage($"Return_Image: 获取 {type} 心情表情包失败: {ex.Message}");
-                LogMessage($"Return_Image: 错误堆栈: {ex.StackTrace}");
+                LogError("ImageMgr", $"获取 {type} 心情表情包失败: {ex.Message}");
+                LogDebug("ImageMgr", $"错误堆栈: {ex.StackTrace}");
                 return null;
             }
         }
@@ -630,46 +729,46 @@ namespace VPet.Plugin.Image
             {
                 if (imageToShow == null)
                 {
-                    LogMessage("DisplayImage: 传入的图片为空，无法显示");
+                    LogWarning("ImageMgr", "传入的图片为空，无法显示");
                     return;
                 }
 
                 if (image?.Image == null)
                 {
-                    LogMessage("DisplayImage: UI组件未初始化，无法显示图片");
+                    LogWarning("ImageMgr", "UI组件未初始化，无法显示图片");
                     return;
                 }
 
-                LogMessage("DisplayImage: 开始显示表情包");
-                LogMessage($"DisplayImage: 图片路径: {imageToShow.UriSource?.ToString() ?? "未知"}");
-                LogMessage($"DisplayImage: 图片尺寸: {imageToShow.PixelWidth}x{imageToShow.PixelHeight}");
+                LogDebug("ImageMgr", "开始显示表情包");
+                LogDebug("ImageMgr", $"图片路径: {imageToShow.UriSource?.ToString() ?? "未知"}");
+                LogDebug("ImageMgr", $"图片尺寸: {imageToShow.PixelWidth}x{imageToShow.PixelHeight}");
 
                 image.Visibility = Visibility.Visible;
-                LogMessage("DisplayImage: UI组件已设置为可见");
+                LogDebug("ImageMgr", "UI组件已设置为可见");
 
                 if (IsGifImage(imageToShow))
                 {
-                    LogMessage("DisplayImage: 检测到GIF动画，使用动画显示模式");
+                    LogDebug("ImageMgr", "检测到GIF动画，使用动画显示模式");
                     // For GIF images
                     ImageBehavior.SetAnimatedSource(image.Image, imageToShow);
                     image.Image.Source = null;
-                    LogMessage("DisplayImage: GIF动画设置完成");
+                    LogDebug("ImageMgr", "GIF动画设置完成");
                 }
                 else
                 {
-                    LogMessage("DisplayImage: 检测到静态图片，使用静态显示模式");
+                    LogDebug("ImageMgr", "检测到静态图片，使用静态显示模式");
                     // For static images
                     ImageBehavior.SetAnimatedSource(image.Image, null);
                     image.Image.Source = imageToShow;
-                    LogMessage("DisplayImage: 静态图片设置完成");
+                    LogDebug("ImageMgr", "静态图片设置完成");
                 }
 
-                LogMessage("DisplayImage: 表情包显示成功");
+                LogInfo("ImageMgr", "表情包显示成功");
             }
             catch (Exception ex)
             {
-                LogMessage($"DisplayImage: 显示表情包失败: {ex.Message}");
-                LogMessage($"DisplayImage: 错误堆栈: {ex.StackTrace}");
+                LogError("ImageMgr", $"显示表情包失败: {ex.Message}");
+                LogDebug("ImageMgr", $"错误堆栈: {ex.StackTrace}");
             }
         }
 
@@ -679,22 +778,22 @@ namespace VPet.Plugin.Image
             {
                 if (image?.Image == null)
                 {
-                    LogMessage("HideImage: UI组件未初始化，无需隐藏");
+                    LogDebug("ImageMgr", "UI组件未初始化，无需隐藏");
                     return;
                 }
 
-                LogMessage("HideImage: 开始隐藏表情包");
+                LogDebug("ImageMgr", "开始隐藏表情包");
 
                 image.Visibility = Visibility.Collapsed;
                 ImageBehavior.SetAnimatedSource(image.Image, null);
                 image.Image.Source = null;
 
-                LogMessage("HideImage: 表情包已隐藏，UI组件已清理");
+                LogInfo("ImageMgr", "表情包已隐藏");
             }
             catch (Exception ex)
             {
-                LogMessage($"HideImage: 隐藏表情包失败: {ex.Message}");
-                LogMessage($"HideImage: 错误堆栈: {ex.StackTrace}");
+                LogError("ImageMgr", $"隐藏表情包失败: {ex.Message}");
+                LogDebug("ImageMgr", $"错误堆栈: {ex.StackTrace}");
             }
         }
 
@@ -706,17 +805,14 @@ namespace VPet.Plugin.Image
             int intervalMs = settings.GetDisplayIntervalMs();
             timer.Interval = TimeSpan.FromMilliseconds(intervalMs);
 
-            if (settings.DebugMode)
+            if (settings.UseRandomInterval)
             {
-                if (settings.UseRandomInterval)
-                {
-                    int minutes = intervalMs / (60 * 1000);
-                    LogMessage($"设置随机定时器间隔: {minutes} 分钟");
-                }
-                else
-                {
-                    LogMessage($"设置固定定时器间隔: {settings.DisplayInterval} 分钟");
-                }
+                int minutes = intervalMs / (60 * 1000);
+                LogDebug("ImageMgr", $"设置随机定时器间隔: {minutes} 分钟");
+            }
+            else
+            {
+                LogDebug("ImageMgr", $"设置固定定时器间隔: {settings.DisplayInterval} 分钟");
             }
         }
 
@@ -724,52 +820,65 @@ namespace VPet.Plugin.Image
         {
             try
             {
-                LogMessage("=== 定时器触发 ===");
+                LogDebug("ImageMgr", "=== 定时器触发 ===");
                 timer?.Stop();
 
                 // Check if plugin is enabled
                 if (!settings.IsEnabled)
                 {
-                    LogMessage("定时器: 插件未启用，跳过显示");
+                    LogDebug("ImageMgr", "插件未启用，跳过显示");
                     SetRandomInterval();
                     timer?.Start();
                     return;
                 }
 
+                // Check if time trigger is enabled
+                if (!settings.UseTimeTrigger)
+                {
+                    LogDebug("ImageMgr", "时间触发已禁用，停止定时器");
+                    return; // Don't restart timer when time trigger is disabled
+                }
+
                 // Get current pet mood
                 var currentMode = MW.Core.Save.CalMode();
-                LogMessage($"定时器: 当前宠物心情: {currentMode}");
+                LogDebug("ImageMgr", $"当前宠物心情: {currentMode}");
 
                 var imageToShow = Return_Image(currentMode);
 
                 if (imageToShow != null)
                 {
-                    LogMessage($"定时器: 准备显示 {currentMode} 心情表情包");
+                    LogInfo("ImageMgr", $"定时器显示 {currentMode} 心情表情包");
                     DisplayImage(imageToShow);
 
-                    LogMessage($"定时器: 表情包将显示 {settings.GetDisplayDurationMs()}ms");
+                    LogDebug("ImageMgr", $"表情包将显示 {settings.GetDisplayDurationMs()}ms");
                     // Auto-hide after configured duration
                     await Task.Delay(settings.GetDisplayDurationMs());
                     HideImage();
-                    LogMessage("定时器: 表情包显示周期完成");
+                    LogDebug("ImageMgr", "表情包显示周期完成");
                 }
                 else
                 {
-                    LogMessage($"定时器: 未找到 {currentMode} 心情的表情包，跳过显示");
+                    LogWarning("ImageMgr", $"未找到 {currentMode} 心情的表情包，跳过显示");
                 }
 
-                // Restart timer with new random interval
-                SetRandomInterval();
-                timer?.Start();
-                LogMessage("=== 定时器周期完成 ===");
+                // Restart timer with new random interval (only if time trigger is still enabled)
+                if (settings.UseTimeTrigger)
+                {
+                    SetRandomInterval();
+                    timer?.Start();
+                }
+                LogDebug("ImageMgr", "=== 定时器周期完成 ===");
             }
             catch (Exception ex)
             {
-                LogMessage($"定时器事件出错: {ex.Message}");
-                LogMessage($"定时器错误堆栈: {ex.StackTrace}");
-                // Restart timer even on error
-                SetRandomInterval();
-                timer?.Start();
+                LogError("ImageMgr", $"定时器事件出错: {ex.Message}");
+                LogDebug("ImageMgr", $"定时器错误堆栈: {ex.StackTrace}");
+                // Restart timer even on error (only if time trigger is enabled)
+                if (settings.UseTimeTrigger)
+                {
+                    SetRandomInterval();
+                    timer?.Start();
+                }
             }
         }
 
@@ -898,9 +1007,14 @@ namespace VPet.Plugin.Image
                     emotionLabelsPath = null;
                 }
 
-                // 创建情感分析器（传入标签文件路径）
-                emotionAnalyzer = new EmotionAnalyzer(llmClient, cacheManager, MW, emotionLabelsPath);
+                // 创建情感分析器（传入ImageMgr参数以支持标签匹配）
+                emotionAnalyzer = new EmotionAnalyzer(llmClient, cacheManager, MW, this, emotionLabelsPath);
                 LogMessage("情感分析器已创建");
+
+                // 创建标签图片匹配器
+                labelImageMatcher = new LabelImageMatcher(this);
+                labelImageMatcher.LoadLabels();
+                LogMessage("标签图片匹配器已创建并加载标签");
 
                 // 创建向量检索器
                 vectorRetriever = new VectorRetriever(llmClient);
@@ -954,7 +1068,7 @@ namespace VPet.Plugin.Image
                         string openaiEmbeddingModel = string.IsNullOrWhiteSpace(config.OpenAIEmbeddingModel)
                             ? "text-embedding-3-small"
                             : config.OpenAIEmbeddingModel;
-                        return new OpenAIClient(config.OpenAIApiKey, openaiBaseUrl, openaiModel, openaiEmbeddingModel);
+                        return new OpenAIClient(config.OpenAIApiKey, openaiBaseUrl, openaiModel, openaiEmbeddingModel, this);
 
                     case LLMProvider.Gemini:
                         if (string.IsNullOrWhiteSpace(config.GeminiApiKey))
@@ -972,7 +1086,7 @@ namespace VPet.Plugin.Image
                         string geminiEmbeddingModel = string.IsNullOrWhiteSpace(config.GeminiEmbeddingModel)
                             ? "embedding-001"
                             : config.GeminiEmbeddingModel;
-                        return new GeminiClient(config.GeminiApiKey, geminiBaseUrl, geminiModel, geminiEmbeddingModel);
+                        return new GeminiClient(config.GeminiApiKey, geminiBaseUrl, geminiModel, geminiEmbeddingModel, this);
 
                     case LLMProvider.Ollama:
                         string ollamaBaseUrl = string.IsNullOrWhiteSpace(config.OllamaBaseUrl)
@@ -982,7 +1096,7 @@ namespace VPet.Plugin.Image
                             ? "llama2"
                             : config.OllamaModel;
                         LogMessage($"使用Ollama客户端: {ollamaBaseUrl}, 模型: {ollamaModel}");
-                        return new OllamaClient(ollamaBaseUrl, ollamaModel);
+                        return new OllamaClient(ollamaBaseUrl, ollamaModel, this);
 
                     default:
                         LogMessage($"未知的LLM提供商: {config.Provider}");
@@ -1059,6 +1173,7 @@ namespace VPet.Plugin.Image
                 }
 
                 // 清理其他组件
+                labelImageMatcher = null;
                 imageSelector = null;
                 vectorRetriever = null;
                 emotionAnalyzer = null;
@@ -1200,10 +1315,20 @@ namespace VPet.Plugin.Image
                     return;
                 }
 
-                // 注意：此方法只在未启用LLM情感分析时才会被调用
-                LogMessage("BubbleTextListener: 使用简单关键词匹配处理");
+                // 处理气泡概率触发（如果启用气泡触发模式）
+                if (settings.UseBubbleTrigger)
+                {
+                    LogMessage($"BubbleTextListener: 气泡触发已启用，概率: {settings.BubbleTriggerProbability}%");
+                    await HandleBubbleProbabilityTrigger();
+                }
+                else
+                {
+                    LogMessage("BubbleTextListener: 气泡触发已禁用，跳过概率触发");
+                }
 
-                // 使用简单的关键词匹配逻辑
+                // 注意：此方法只在未启用LLM情感分析时才会被调用
+                // 使用简单的关键词匹配逻辑（与气泡触发并行工作）
+                LogMessage("BubbleTextListener: 使用简单关键词匹配处理");
                 await ProcessTextWithSimpleMatching(text);
                 
                 LogMessage("=== BubbleTextListener 气泡文本处理完成 ===");
@@ -1397,6 +1522,88 @@ namespace VPet.Plugin.Image
                 LogMessage($"ImageMgr: 获取当前心情图片失败: {ex.Message}");
                 return null;
             }
+        }
+
+        /// <summary>
+        /// 处理气泡概率触发
+        /// </summary>
+        private async Task HandleBubbleProbabilityTrigger()
+        {
+            try
+            {
+                if (!settings.IsEnabled)
+                {
+                    LogMessage("气泡概率触发: 插件未启用，跳过处理");
+                    return;
+                }
+
+                if (!settings.UseBubbleTrigger)
+                {
+                    LogMessage("气泡概率触发: 气泡触发已禁用，跳过处理");
+                    return;
+                }
+
+                LogMessage($"气泡概率触发: 检查概率 {settings.BubbleTriggerProbability}%");
+
+                if (settings.ShouldTriggerBubble())
+                {
+                    LogMessage("=== 气泡概率触发：命中概率，显示表情包 ===");
+                    
+                    // 显示表情包
+                    var currentMode = MW.Core.Save.CalMode();
+                    var imageToShow = Return_Image(currentMode);
+
+                    if (imageToShow != null)
+                    {
+                        LogMessage($"气泡概率触发: 显示 {currentMode} 心情表情包");
+                        DisplayImage(imageToShow);
+
+                        // 自动隐藏
+                        await Task.Delay(settings.GetDisplayDurationMs());
+                        HideImage();
+                        LogMessage("气泡概率触发: 表情包显示完成");
+                    }
+                    else
+                    {
+                        LogMessage($"气泡概率触发: 未找到 {currentMode} 心情的表情包");
+                    }
+
+                    LogMessage("=== 气泡概率触发周期完成 ===");
+                }
+                else
+                {
+                    LogMessage("气泡概率触发: 未命中概率，跳过显示");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"处理气泡概率触发失败: {ex.Message}");
+                LogMessage($"气泡概率触发错误堆栈: {ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// 供 SpeechCapturer 调用的气泡概率触发处理方法
+        /// </summary>
+        public async void HandleBubbleProbabilityFromSpeechCapturer()
+        {
+            try
+            {
+                LogMessage("SpeechCapturer 请求处理气泡概率触发");
+                await HandleBubbleProbabilityTrigger();
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"SpeechCapturer 气泡概率触发处理失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 获取标签图片匹配器（供 EmotionAnalyzer 调用）
+        /// </summary>
+        public LabelImageMatcher GetLabelImageMatcher()
+        {
+            return labelImageMatcher;
         }
     }
 }

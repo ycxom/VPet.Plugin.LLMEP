@@ -272,102 +272,25 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 显示设置卡片 -->
-                        <Border Style="{StaticResource SettingCard}">
+                        <!-- 时间触发设置卡片 -->
+                        <Border x:Name="PanelTimeTrigger" Style="{StaticResource SettingCard}">
                             <StackPanel>
-                                <TextBlock Text="显示设置" Style="{StaticResource SectionTitle}"/>
-                                
-                                <!-- 显示时长 -->
-                                <StackPanel Margin="0,0,0,20">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0"
-                                                 Text="显示时长" 
-                                                 FontSize="14" 
-                                                 FontWeight="Medium" 
-                                                 Foreground="#333333"
-                                                 VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1"
-                                                 Text="{Binding ElementName=SliderDisplayDuration, Path=Value, StringFormat={}{0:F0} 秒}" 
-                                                 FontSize="14"
-                                                 FontWeight="SemiBold"
-                                                 Foreground="#0078D4"
-                                                 VerticalAlignment="Center"
-                                                 MinWidth="60"
-                                                 TextAlignment="Right"/>
-                                    </Grid>
-                                    <Slider x:Name="SliderDisplayDuration" 
-                                          Minimum="1" 
-                                          Maximum="10" 
-                                          TickFrequency="1" 
-                                          IsSnapToTickEnabled="True"
-                                          ValueChanged="SliderDisplayDuration_ValueChanged"
-                                          Margin="0,8,0,0"
-                                          Height="32"/>
-                                    <TextBlock Text="表情包在屏幕上显示的时长" 
-                                             Style="{StaticResource DescriptionText}"
-                                             Margin="0,4,0,0"/>
-                                </StackPanel>
-
-                                <!-- 显示间隔 -->
-                                <StackPanel>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0"
-                                                 Text="显示间隔" 
-                                                 FontSize="14" 
-                                                 FontWeight="Medium" 
-                                                 Foreground="#333333"
-                                                 VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1"
-                                                 Text="{Binding ElementName=SliderDisplayInterval, Path=Value, StringFormat={}{0:F0} 分钟}" 
-                                                 FontSize="14"
-                                                 FontWeight="SemiBold"
-                                                 Foreground="#0078D4"
-                                                 VerticalAlignment="Center"
-                                                 MinWidth="80"
-                                                 TextAlignment="Right"/>
-                                    </Grid>
-                                    <Slider x:Name="SliderDisplayInterval" 
-                                          Minimum="1" 
-                                          Maximum="60" 
-                                          TickFrequency="1" 
-                                          IsSnapToTickEnabled="True"
-                                          ValueChanged="SliderDisplayInterval_ValueChanged"
-                                          Margin="0,8,0,0"
-                                          Height="32"/>
-                                    <TextBlock Text="两次显示表情包之间的时间间隔" 
-                                             Style="{StaticResource DescriptionText}"
-                                             Margin="0,4,0,0"/>
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- 高级选项卡片 -->
-                        <Border Style="{StaticResource SettingCard}">
-                            <StackPanel>
-                                <TextBlock Text="高级选项" Style="{StaticResource SectionTitle}"/>
-                                <Grid>
+                                <!-- 时间触发开关 -->
+                                <Grid Margin="0,0,0,20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="随机间隔" 
-                                                 FontSize="14" 
-                                                 FontWeight="Medium" 
+                                        <TextBlock Text="⏰ 时间触发" 
+                                                 FontSize="16" 
+                                                 FontWeight="SemiBold" 
                                                  Foreground="#333333"/>
-                                        <TextBlock Text="开启后显示间隔将在设定值的 50%-150% 之间随机变化" 
+                                        <TextBlock Text="根据设定的时间间隔自动显示表情包" 
                                                  Style="{StaticResource DescriptionText}"
                                                  Margin="0,4,0,0"/>
                                     </StackPanel>
-                                    <pu:Switch x:Name="SwitchRandomInterval" 
+                                    <pu:Switch x:Name="SwitchTimeTrigger" 
                                              Grid.Column="1"
                                              Background="Transparent"
                                              BorderBrush="#D0D0D0"
@@ -379,10 +302,190 @@
                                              ToggleBrush="#999999"
                                              ToggleShadowColor="{x:Null}"
                                              ToggleSize="20"
-                                             Checked="SwitchRandomInterval_Changed"
-                                             Unchecked="SwitchRandomInterval_Changed"
+                                             Checked="SwitchTimeTrigger_Changed"
+                                             Unchecked="SwitchTimeTrigger_Changed"
                                              VerticalAlignment="Center"/>
                                 </Grid>
+
+                                <!-- 时间触发具体设置 -->
+                                <StackPanel x:Name="TimeTriggerSettings">
+                                    <!-- 显示时长 -->
+                                    <StackPanel Margin="0,0,0,20">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0"
+                                                     Text="显示时长" 
+                                                     FontSize="14" 
+                                                     FontWeight="Medium" 
+                                                     Foreground="#333333"
+                                                     VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1"
+                                                     Text="{Binding ElementName=SliderDisplayDuration, Path=Value, StringFormat={}{0:F0} 秒}" 
+                                                     FontSize="14"
+                                                     FontWeight="SemiBold"
+                                                     Foreground="#0078D4"
+                                                     VerticalAlignment="Center"
+                                                     MinWidth="60"
+                                                     TextAlignment="Right"/>
+                                        </Grid>
+                                        <Slider x:Name="SliderDisplayDuration" 
+                                              Minimum="1" 
+                                              Maximum="10" 
+                                              TickFrequency="1" 
+                                              IsSnapToTickEnabled="True"
+                                              ValueChanged="SliderDisplayDuration_ValueChanged"
+                                              Margin="0,8,0,0"
+                                              Height="32"/>
+                                        <TextBlock Text="表情包在屏幕上显示的时长" 
+                                                 Style="{StaticResource DescriptionText}"
+                                                 Margin="0,4,0,0"/>
+                                    </StackPanel>
+
+                                    <!-- 显示间隔 -->
+                                    <StackPanel Margin="0,0,0,16">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0"
+                                                     Text="显示间隔" 
+                                                     FontSize="14" 
+                                                     FontWeight="Medium" 
+                                                     Foreground="#333333"
+                                                     VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1"
+                                                     Text="{Binding ElementName=SliderDisplayInterval, Path=Value, StringFormat={}{0:F0} 分钟}" 
+                                                     FontSize="14"
+                                                     FontWeight="SemiBold"
+                                                     Foreground="#0078D4"
+                                                     VerticalAlignment="Center"
+                                                     MinWidth="80"
+                                                     TextAlignment="Right"/>
+                                        </Grid>
+                                        <Slider x:Name="SliderDisplayInterval" 
+                                              Minimum="1" 
+                                              Maximum="60" 
+                                              TickFrequency="1" 
+                                              IsSnapToTickEnabled="True"
+                                              ValueChanged="SliderDisplayInterval_ValueChanged"
+                                              Margin="0,8,0,0"
+                                              Height="32"/>
+                                        <TextBlock Text="两次显示表情包之间的时间间隔" 
+                                                 Style="{StaticResource DescriptionText}"
+                                                 Margin="0,4,0,0"/>
+                                    </StackPanel>
+
+                                    <!-- 随机间隔 -->
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="随机间隔" 
+                                                     FontSize="14" 
+                                                     FontWeight="Medium" 
+                                                     Foreground="#333333"/>
+                                            <TextBlock Text="开启后显示间隔将在设定值的 50%-150% 之间随机变化" 
+                                                     Style="{StaticResource DescriptionText}"
+                                                     Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                        <pu:Switch x:Name="SwitchRandomInterval" 
+                                                 Grid.Column="1"
+                                                 Background="Transparent"
+                                                 BorderBrush="#D0D0D0"
+                                                 BoxHeight="24" 
+                                                 BoxWidth="48"
+                                                 CheckedBackground="#0078D4"
+                                                 CheckedBorderBrush="#0078D4"
+                                                 CheckedToggleBrush="White"
+                                                 ToggleBrush="#999999"
+                                                 ToggleShadowColor="{x:Null}"
+                                                 ToggleSize="20"
+                                                 Checked="SwitchRandomInterval_Changed"
+                                                 Unchecked="SwitchRandomInterval_Changed"
+                                                 VerticalAlignment="Center"/>
+                                    </Grid>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 气泡触发设置卡片 -->
+                        <Border x:Name="PanelBubbleTrigger" Style="{StaticResource SettingCard}">
+                            <StackPanel>
+                                <!-- 气泡触发开关 -->
+                                <Grid Margin="0,0,0,20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="💬 气泡触发" 
+                                                 FontSize="16" 
+                                                 FontWeight="SemiBold" 
+                                                 Foreground="#333333"/>
+                                        <TextBlock Text="根据VPet说话概率触发表情包显示" 
+                                                 Style="{StaticResource DescriptionText}"
+                                                 Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                    <pu:Switch x:Name="SwitchBubbleTrigger" 
+                                             Grid.Column="1"
+                                             Background="Transparent"
+                                             BorderBrush="#D0D0D0"
+                                             BoxHeight="24" 
+                                             BoxWidth="48"
+                                             CheckedBackground="#0078D4"
+                                             CheckedBorderBrush="#0078D4"
+                                             CheckedToggleBrush="White"
+                                             ToggleBrush="#999999"
+                                             ToggleShadowColor="{x:Null}"
+                                             ToggleSize="20"
+                                             Checked="SwitchBubbleTrigger_Changed"
+                                             Unchecked="SwitchBubbleTrigger_Changed"
+                                             VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <!-- 气泡触发具体设置 -->
+                                <StackPanel x:Name="BubbleTriggerSettings">
+                                    <!-- 气泡触发概率 -->
+                                    <StackPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0"
+                                                     Text="触发概率" 
+                                                     FontSize="14" 
+                                                     FontWeight="Medium" 
+                                                     Foreground="#333333"
+                                                     VerticalAlignment="Center"/>
+                                            <TextBlock Grid.Column="1"
+                                                     Text="{Binding ElementName=SliderBubbleTriggerProbability, Path=Value, StringFormat={}{0:F0}%}" 
+                                                     FontSize="14"
+                                                     FontWeight="SemiBold"
+                                                     Foreground="#0078D4"
+                                                     VerticalAlignment="Center"
+                                                     MinWidth="60"
+                                                     TextAlignment="Right"/>
+                                        </Grid>
+                                        <Slider x:Name="SliderBubbleTriggerProbability" 
+                                              Minimum="1" 
+                                              Maximum="100" 
+                                              TickFrequency="1" 
+                                              IsSnapToTickEnabled="True"
+                                              ValueChanged="SliderBubbleTriggerProbability_ValueChanged"
+                                              Margin="0,8,0,0"
+                                              Height="32"/>
+                                        <TextBlock Text="VPet每次说话时显示表情包的概率（百分比）" 
+                                                 Style="{StaticResource DescriptionText}"
+                                                 Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
@@ -417,6 +520,8 @@
             <TabItem Header="🔧 调试" Style="{StaticResource ModernTabItem}">
                 <Grid Margin="24,20">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="16"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="16"/>
                         <RowDefinition Height="*"/>
@@ -458,8 +563,74 @@
                         </Grid>
                     </Border>
 
+                    <!-- 日志等级控制卡片 -->
+                    <Border Grid.Row="2" Style="{StaticResource SettingCard}" Margin="0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="12"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            
+                            <!-- 日志等级选择 -->
+                            <StackPanel Grid.Row="0">
+                                <TextBlock Text="日志等级" 
+                                         FontSize="14" 
+                                         FontWeight="Medium" 
+                                         Foreground="#333333"/>
+                                <TextBlock Text="选择要显示的最低日志等级" 
+                                         Style="{StaticResource DescriptionText}"
+                                         Margin="0,4,0,0"/>
+                            </StackPanel>
+                            
+                            <ComboBox x:Name="ComboBoxLogLevel" 
+                                    Grid.Row="0"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    Width="120"
+                                    SelectionChanged="ComboBoxLogLevel_SelectionChanged">
+                                <ComboBoxItem Content="Debug" Tag="0"/>
+                                <ComboBoxItem Content="Info" Tag="1"/>
+                                <ComboBoxItem Content="Warning" Tag="2"/>
+                                <ComboBoxItem Content="Error" Tag="3"/>
+                            </ComboBox>
+                            
+                            <!-- 文件日志开关 -->
+                            <Grid Grid.Row="2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="文件日志" 
+                                             FontSize="14" 
+                                             FontWeight="Medium" 
+                                             Foreground="#333333"/>
+                                    <TextBlock Text="将日志保存到文件" 
+                                             Style="{StaticResource DescriptionText}"
+                                             Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <pu:Switch x:Name="SwitchFileLogging" 
+                                         Grid.Column="1"
+                                         Background="Transparent"
+                                         BorderBrush="#D0D0D0"
+                                         BoxHeight="24" 
+                                         BoxWidth="48"
+                                         CheckedBackground="#0078D4"
+                                         CheckedBorderBrush="#0078D4"
+                                         CheckedToggleBrush="White"
+                                         ToggleBrush="#999999"
+                                         ToggleShadowColor="{x:Null}"
+                                         ToggleSize="20"
+                                         Checked="SwitchFileLogging_Changed"
+                                         Unchecked="SwitchFileLogging_Changed"
+                                         VerticalAlignment="Center"/>
+                            </Grid>
+                        </Grid>
+                    </Border>
+
                     <!-- 日志显示区域 -->
-                    <Border Grid.Row="2" 
+                    <Border Grid.Row="4" 
                             Background="White"
                             BorderBrush="#E0E0E0" 
                             BorderThickness="1" 
@@ -579,6 +750,40 @@
                                          ToggleSize="20"
                                          Checked="SwitchEmotionAnalysis_Changed"
                                          Unchecked="SwitchEmotionAnalysis_Changed"
+                                         VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- 精确表情包匹配卡片 -->
+                        <Border Style="{StaticResource SettingCard}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="更加精确的使用表情包" 
+                                             FontSize="14" 
+                                             FontWeight="Medium" 
+                                             Foreground="#333333"/>
+                                    <TextBlock Text="使用label.json标签文件进行精确匹配，让LLM返回标签并匹配对应的表情包图片" 
+                                             Style="{StaticResource DescriptionText}"
+                                             Margin="0,4,0,0"/>
+                                </StackPanel>
+                                <pu:Switch x:Name="SwitchAccurateImageMatching" 
+                                         Grid.Column="1"
+                                         Background="Transparent"
+                                         BorderBrush="#D0D0D0"
+                                         BoxHeight="24" 
+                                         BoxWidth="48"
+                                         CheckedBackground="#0078D4"
+                                         CheckedBorderBrush="#0078D4"
+                                         CheckedToggleBrush="White"
+                                         ToggleBrush="#999999"
+                                         ToggleShadowColor="{x:Null}"
+                                         ToggleSize="20"
+                                         Checked="SwitchAccurateImageMatching_Changed"
+                                         Unchecked="SwitchAccurateImageMatching_Changed"
                                          VerticalAlignment="Center"/>
                             </Grid>
                         </Border>

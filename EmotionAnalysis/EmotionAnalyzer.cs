@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.Windows.Media.Imaging;
 using VPet_Simulator.Core;
 using VPet_Simulator.Windows.Interface;
 
@@ -17,23 +18,134 @@ namespace VPet.Plugin.Image.EmotionAnalysis
         private readonly ILLMClient _llmClient;
         private readonly CacheManager _cacheManager;
         private readonly IMainWindow _mainWindow;
+        private readonly ImageMgr _imageMgr;
         private DateTime _lastRequestTime = DateTime.MinValue;
         private const int MIN_REQUEST_INTERVAL_MS = 10000; // 10秒
         private string _emotionLabelsPrompt = "";
+        private string _imageTagsPrompt = "";
 
-        public EmotionAnalyzer(ILLMClient llmClient, CacheManager cacheManager, IMainWindow mainWindow, string emotionLabelsPath = null)
+        public EmotionAnalyzer(ILLMClient llmClient, CacheManager cacheManager, IMainWindow mainWindow, ImageMgr imageMgr, string emotionLabelsPath = null)
         {
             _llmClient = llmClient;
             _cacheManager = cacheManager;
             _mainWindow = mainWindow;
+            _imageMgr = imageMgr;
 
             // 加载情感标签提示词
             if (!string.IsNullOrEmpty(emotionLabelsPath) && File.Exists(emotionLabelsPath))
             {
                 LoadEmotionLabelsPrompt(emotionLabelsPath);
             }
+
+            // 构建图片标签提示词
+            BuildImageTagsPrompt();
         }
 
+        /// <summary>
+        /// 构建图片标签提示词
+        /// </summary>
+        private void BuildImageTagsPrompt()
+        {
+            try
+            {
+                // 从label.json中提取所有可用的标签
+                var allTags = new HashSet<string>();
+                string dllPath = _imageMgr.LoaddllPath();
+
+                // 读取内置表情包标签
+                if (_imageMgr.Settings.EnableBuiltInImages)
+                {
+                    string builtInLabelPath = Path.Combine(dllPath, "VPet_Expression", "label.json");
+                    ExtractTagsFromLabelFile(builtInLabelPath, allTags);
+                }
+
+                // 读取DIY表情包标签
+                if (_imageMgr.Settings.EnableDIYImages)
+                {
+                    string diyLabelPath = Path.Combine(dllPath, "DIY_Expression", "label.json");
+                    ExtractTagsFromLabelFile(diyLabelPath, allTags);
+                }
+
+                if (allTags.Count > 0)
+                {
+                    var tagList = allTags.ToList();
+                    tagList.Sort(); // 排序便于阅读
+
+                    _imageTagsPrompt = $@"
+
+请根据以下文本内容，从给定的标签列表中选择1-3个最相关的标签，用于匹配合适的表情包图片。
+
+【重要】只能从以下标签列表中选择，不允许使用列表外的任何词汇：
+{string.Join("、", tagList)}
+
+严格要求：
+1. 必须且只能从上述标签列表中选择
+2. 不允许使用任何不在列表中的词汇
+3. 多个标签用逗号分隔，不要空格
+4. 只返回标签，不要任何解释或其他文字
+5. 如果文本内容与标签列表完全不匹配，返回可爱
+
+正确示例：睡觉,可爱
+正确示例：开心,激动
+正确示例：疑惑
+
+文本内容：";
+
+                    _imageMgr.LogDebug("EmotionAnalyzer", $"图片标签提示词已构建，包含 {allTags.Count} 个标签");
+                }
+                else
+                {
+                    _imageTagsPrompt = "";
+                    _imageMgr.LogWarning("EmotionAnalyzer", "未找到可用的图片标签");
+                }
+            }
+            catch (Exception ex)
+            {
+                _imageMgr.LogError("EmotionAnalyzer", $"构建图片标签提示词失败: {ex.Message}");
+                _imageTagsPrompt = "";
+            }
+        }
+
+        /// <summary>
+        /// 从标签文件中提取标签
+        /// </summary>
+        private void ExtractTagsFromLabelFile(string labelFilePath, HashSet<string> allTags)
+        {
+            try
+            {
+                if (!File.Exists(labelFilePath))
+                    return;
+
+                string jsonContent = File.ReadAllText(labelFilePath);
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                };
+                var labelData = JsonSerializer.Deserialize<LabelData>(jsonContent, options);
+
+                if (labelData?.Images != null)
+                {
+                    foreach (var imageInfo in labelData.Images)
+                    {
+                        if (imageInfo.Labels != null)
+                        {
+                            foreach (var label in imageInfo.Labels)
+                            {
+                                if (!string.IsNullOrWhiteSpace(label))
+                                {
+                                    allTags.Add(label.Trim());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _imageMgr.LogError("EmotionAnalyzer", $"提取标签失败: {labelFilePath}, 错误: {ex.Message}");
+            }
+        }
         /// <summary>
         /// 加载情感标签提示词
         /// </summary>
@@ -92,28 +204,139 @@ namespace VPet.Plugin.Image.EmotionAnalysis
             }
         }
 
+        /// <summary>
+        /// 分析情感并返回匹配的图片（支持精确标签匹配）
+        /// </summary>
+        /// <param name="text">要分析的文本</param>
+        /// <returns>匹配的图片，如果没有匹配则返回null</returns>
+        public async Task<BitmapImage> AnalyzeEmotionAndGetImageAsync(string text)
+        {
+            try
+            {
+                _imageMgr.LogDebug("EmotionAnalyzer", "=== AnalyzeEmotionAndGetImageAsync 开始 ===");
+                _imageMgr.LogDebug("EmotionAnalyzer", $"接收到文本: {text}");
+                _imageMgr.LogDebug("EmotionAnalyzer", $"精确匹配设置: {_imageMgr.Settings.UseAccurateImageMatching}");
+                
+                // 如果启用了精确图片匹配，使用标签匹配
+                if (_imageMgr.Settings.UseAccurateImageMatching)
+                {
+                    _imageMgr.LogInfo("EmotionAnalyzer", "使用精确标签匹配模式");
+                    
+                    Utils.Logger.Debug("EmotionAnalyzer", "准备调用 AnalyzeEmotionAsync...");
+                    // 获取标签
+                    var tags = await AnalyzeEmotionAsync(text);
+                    Utils.Logger.Debug("EmotionAnalyzer", "AnalyzeEmotionAsync 调用完成");
+                    
+                    if (tags != null && tags.Count > 0)
+                    {
+                        Utils.Logger.Info("EmotionAnalyzer", $"情感分析结果: {text} -> [{string.Join(", ", tags)}]");
+                        
+                        // 使用标签匹配图片
+                        var labelMatcher = _imageMgr.GetLabelImageMatcher();
+                        if (labelMatcher != null)
+                        {
+                            var matchedImage = labelMatcher.MatchImageByTags(tags);
+                            if (matchedImage != null)
+                            {
+                                Utils.Logger.Debug("EmotionAnalyzer", "标签匹配成功，返回匹配的图片");
+                                return matchedImage;
+                            }
+                            else
+                            {
+                                Utils.Logger.Debug("EmotionAnalyzer", "标签匹配失败，使用降级方案");
+                            }
+                        }
+                        else
+                        {
+                            Utils.Logger.Warning("EmotionAnalyzer", "标签匹配器未初始化，使用降级方案");
+                        }
+                    }
+                    else
+                    {
+                        Utils.Logger.Debug("EmotionAnalyzer", "未获得有效标签，使用降级方案");
+                    }
+                }
+                else
+                {
+                    Utils.Logger.Debug("EmotionAnalyzer", "精确标签匹配未启用，使用传统模式");
+                }
+
+                // 降级方案：使用传统的心情匹配
+                var currentMode = _mainWindow.Core.Save.CalMode();
+                Utils.Logger.Debug("EmotionAnalyzer", $"使用传统心情匹配，当前心情: {currentMode}");
+                return _imageMgr.GetCurrentMoodImagePublic();
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Error("EmotionAnalyzer", $"情感分析和图片匹配失败: {ex.Message}");
+                return null;
+            }
+        }
+
         public async Task<List<string>> AnalyzeEmotionAsync(string text)
         {
             try
             {
-                // 检查缓存
-                if (_cacheManager.TryGetEmotion(text, out var cachedEmotions))
+                Utils.Logger.Debug("EmotionAnalyzer", "=== AnalyzeEmotionAsync 开始 ===");
+                Utils.Logger.Debug("EmotionAnalyzer", $"接收到文本: {text}");
+                
+                Utils.Logger.Debug("EmotionAnalyzer", "检查缓存...");
+                
+                // 临时：如果启用精确匹配模式，清空缓存以确保使用最新的标签分析
+                if (_imageMgr.Settings.UseAccurateImageMatching)
                 {
+                    Utils.Logger.Debug("EmotionAnalyzer", "精确匹配模式下，跳过缓存以确保使用最新标签");
+                    // 不使用缓存，直接进行新的分析
+                }
+                else if (_cacheManager.TryGetEmotion(text, out var cachedEmotions))
+                {
+                    // 传统模式下使用缓存
+                    Utils.Logger.Debug("EmotionAnalyzer", $"找到缓存结果: [{string.Join(", ", cachedEmotions)}]");
                     return cachedEmotions;
                 }
+                Utils.Logger.Debug("EmotionAnalyzer", "继续进行新的分析");
 
                 // 限流检查
+                Utils.Logger.Debug("EmotionAnalyzer", "检查限流...");
                 var timeSinceLastRequest = DateTime.Now - _lastRequestTime;
                 if (timeSinceLastRequest.TotalMilliseconds < MIN_REQUEST_INTERVAL_MS)
                 {
+                    Utils.Logger.Debug("EmotionAnalyzer", $"触发限流，距离上次请求 {timeSinceLastRequest.TotalMilliseconds}ms");
                     Console.WriteLine($"[EmotionAnalyzer] Rate limited, using fallback");
                     return GetFallbackEmotion();
                 }
 
-                // 调用LLM分析（附带标签提示）
+                // 根据设置选择不同的prompt
+                string promptToUse;
+                if (_imageMgr.Settings.UseAccurateImageMatching && !string.IsNullOrEmpty(_imageTagsPrompt))
+                {
+                    // 使用精确图片标签匹配模式
+                    promptToUse = _imageTagsPrompt + text;
+                    _imageMgr.LogInfo("EmotionAnalyzer", "使用精确图片标签匹配模式");
+                }
+                else
+                {
+                    // 使用传统情感分析模式
+                    promptToUse = text + _emotionLabelsPrompt;
+                    _imageMgr.LogInfo("EmotionAnalyzer", "使用传统情感分析模式");
+                }
+
+                // 记录发送给 LLM 的完整 prompt
+                _imageMgr.LogDebug("EmotionAnalyzer", "=== LLM 请求内容开始 ===");
+                _imageMgr.LogDebug("EmotionAnalyzer", $"Prompt 长度: {promptToUse.Length} 字符");
+                _imageMgr.LogDebug("EmotionAnalyzer", "Prompt 内容:");
+                _imageMgr.LogDebug("EmotionAnalyzer", promptToUse);
+                _imageMgr.LogDebug("EmotionAnalyzer", "=== LLM 请求内容结束 ===");
+
+                // 调用LLM分析
                 _lastRequestTime = DateTime.Now;
-                var promptWithLabels = text + _emotionLabelsPrompt;
-                var response = await _llmClient.SendRequestAsync(promptWithLabels);
+                var response = await _llmClient.SendRequestAsync(promptToUse);
+
+                // 记录 LLM 响应
+                _imageMgr.LogDebug("EmotionAnalyzer", "=== LLM 响应内容开始 ===");
+                _imageMgr.LogDebug("EmotionAnalyzer", $"响应长度: {response?.Length ?? 0} 字符");
+                _imageMgr.LogDebug("EmotionAnalyzer", $"响应内容: {response ?? "null"}");
+                _imageMgr.LogDebug("EmotionAnalyzer", "=== LLM 响应内容结束 ===");
 
                 // 解析响应
                 var emotions = ParseEmotions(response);
@@ -126,12 +349,12 @@ namespace VPet.Plugin.Image.EmotionAnalysis
                 // 缓存结果
                 _cacheManager.CacheEmotion(text, emotions);
 
-                Console.WriteLine($"[EmotionAnalyzer] Analyzed: {text} -> {string.Join(", ", emotions)}");
+                _imageMgr.LogInfo("EmotionAnalyzer", $"情感分析结果: {text} -> [{string.Join(", ", emotions)}]");
                 return emotions;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[EmotionAnalyzer] Error: {ex.Message}");
+                Utils.Logger.Error("EmotionAnalyzer", $"情感分析失败: {ex.Message}");
                 return GetFallbackEmotion();
             }
         }
@@ -152,7 +375,60 @@ namespace VPet.Plugin.Image.EmotionAnalysis
                 .Take(3) // 最多3个关键词
                 .ToList();
 
+            // 如果启用了精确匹配模式，验证标签是否在允许列表中
+            if (_imageMgr.Settings.UseAccurateImageMatching)
+            {
+                var validTags = GetValidTags();
+                var validEmotions = new List<string>();
+                
+                foreach (var emotion in emotions)
+                {
+                    if (validTags.Contains(emotion, StringComparer.OrdinalIgnoreCase))
+                    {
+                        validEmotions.Add(emotion);
+                        Utils.Logger.Debug("EmotionAnalyzer", $"标签验证: '{emotion}' 是有效标签");
+                    }
+                    else
+                    {
+                        Utils.Logger.Debug("EmotionAnalyzer", $"标签验证: '{emotion}' 不在允许列表中，已忽略");
+                    }
+                }
+                
+                if (validEmotions.Count == 0)
+                {
+                    Utils.Logger.Debug("EmotionAnalyzer", "标签验证: 没有有效标签，使用降级标签 '可爱'");
+                    validEmotions.Add("可爱");
+                }
+                
+                return validEmotions;
+            }
+
             return emotions;
+        }
+
+        /// <summary>
+        /// 获取所有有效的标签列表
+        /// </summary>
+        private HashSet<string> GetValidTags()
+        {
+            var allTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            string dllPath = _imageMgr.LoaddllPath();
+
+            // 读取内置表情包标签
+            if (_imageMgr.Settings.EnableBuiltInImages)
+            {
+                string builtInLabelPath = Path.Combine(dllPath, "VPet_Expression", "label.json");
+                ExtractTagsFromLabelFile(builtInLabelPath, allTags);
+            }
+
+            // 读取DIY表情包标签
+            if (_imageMgr.Settings.EnableDIYImages)
+            {
+                string diyLabelPath = Path.Combine(dllPath, "DIY_Expression", "label.json");
+                ExtractTagsFromLabelFile(diyLabelPath, allTags);
+            }
+
+            return allTags;
         }
 
         /// <summary>
@@ -178,5 +454,22 @@ namespace VPet.Plugin.Image.EmotionAnalysis
                 return new List<string> { "平静" };
             }
         }
+    }
+
+    /// <summary>
+    /// 标签数据结构（用于解析label.json）
+    /// </summary>
+    public class LabelData
+    {
+        public List<ImageLabelInfo> Images { get; set; }
+    }
+
+    /// <summary>
+    /// 图片标签信息（用于解析label.json）
+    /// </summary>
+    public class ImageLabelInfo
+    {
+        public string Filename { get; set; }
+        public string[] Labels { get; set; }
     }
 }

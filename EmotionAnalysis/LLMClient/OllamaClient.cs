@@ -56,10 +56,13 @@ namespace VPet.Plugin.Image.EmotionAnalysis.LLMClient
         private readonly string _model;
         private readonly HttpClient _httpClient;
 
-        public OllamaClient(string baseUrl = "http://localhost:11434", string model = "llama2")
+        private readonly ImageMgr _imageMgr;
+
+        public OllamaClient(string baseUrl = "http://localhost:11434", string model = "llama2", ImageMgr imageMgr = null)
         {
             _baseUrl = baseUrl.TrimEnd('/');
             _model = model;
+            _imageMgr = imageMgr;
             _httpClient = new HttpClient();
             _httpClient.Timeout = TimeSpan.FromSeconds(60); // Ollama可能需要更长时间
         }
@@ -83,15 +86,40 @@ namespace VPet.Plugin.Image.EmotionAnalysis.LLMClient
                     }
                 };
 
-                var jsonContent = JsonSerializer.Serialize(requestBody);
+                var jsonContent = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions { WriteIndented = true });
                 var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+                // 记录完整的HTTP请求信息
+                _imageMgr?.LogDebug("Ollama", "=== Ollama HTTP 请求开始 ===");
+                _imageMgr?.LogDebug("Ollama", $"URL: {url}");
+                _imageMgr?.LogDebug("Ollama", $"Method: POST");
+                _imageMgr?.LogDebug("Ollama", $"Content-Type: application/json");
+                _imageMgr?.LogDebug("Ollama", "请求体:");
+                _imageMgr?.LogDebug("Ollama", jsonContent);
+                _imageMgr?.LogDebug("Ollama", "=== Ollama HTTP 请求结束 ===");
 
                 var response = await _httpClient.PostAsync(url, content);
                 var responseContent = await response.Content.ReadAsStringAsync();
 
+                // 记录完整的HTTP响应信息
+                _imageMgr?.LogDebug("Ollama", "=== Ollama HTTP 响应开始 ===");
+                _imageMgr?.LogDebug("Ollama", $"状态码: {response.StatusCode}");
+                _imageMgr?.LogDebug("Ollama", $"响应头:");
+                foreach (var header in response.Headers)
+                {
+                    _imageMgr?.LogDebug("Ollama", $"  {header.Key}: {string.Join(", ", header.Value)}");
+                }
+                foreach (var header in response.Content.Headers)
+                {
+                    _imageMgr?.LogDebug("Ollama", $"  {header.Key}: {string.Join(", ", header.Value)}");
+                }
+                _imageMgr?.LogDebug("Ollama", $"响应体:");
+                _imageMgr?.LogDebug("Ollama", responseContent);
+                _imageMgr?.LogDebug("Ollama", "=== Ollama HTTP 响应结束 ===");
+
                 if (!response.IsSuccessStatusCode)
                 {
-                    Console.WriteLine($"[OllamaClient] API Error: {response.StatusCode} - {responseContent}");
+                    _imageMgr?.LogError("Ollama", $"API Error: {response.StatusCode} - {responseContent}");
                     throw new Exception($"Ollama API error: {response.StatusCode}");
                 }
 
@@ -109,7 +137,8 @@ namespace VPet.Plugin.Image.EmotionAnalysis.LLMClient
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[OllamaClient] Error: {ex.Message}");
+                _imageMgr?.LogError("Ollama", $"Error: {ex.Message}");
+                _imageMgr?.LogDebug("Ollama", $"StackTrace: {ex.StackTrace}");
                 throw;
             }
         }

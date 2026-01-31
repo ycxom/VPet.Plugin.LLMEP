@@ -1,8 +1,10 @@
 using Panuon.WPF.UI;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using VPet.Plugin.Image.EmotionAnalysis;
 using VPet.Plugin.Image.EmotionAnalysis.LLMClient;
@@ -40,8 +42,9 @@ namespace VPet.Plugin.Image
         {
             try
             {
-                // 从 ImageMgr 获取日志
-                var logs = imageMgr.GetLogMessages();
+                // 使用静态日志系统，根据设置的日志等级获取日志
+                var minLevel = (VPet.Plugin.Image.Utils.LogLevel)settings.LogLevel;
+                var logs = imageMgr.GetLogMessages(minLevel);
 
                 if (logs.Count > 0)
                 {
@@ -55,7 +58,8 @@ namespace VPet.Plugin.Image
                 {
                     if (string.IsNullOrEmpty(TextBoxLog.Text) || TextBoxLog.Text == "日志将显示在这里...")
                     {
-                        TextBoxLog.Text = "暂无日志。\n\n提示：开启调试模式后，日志会实时显示在这里。";
+                        var levelName = ((VPet.Plugin.Image.Utils.LogLevel)settings.LogLevel).ToString();
+                        TextBoxLog.Text = $"暂无 {levelName} 级别及以上的日志。\n\n提示：\n- 调整日志等级可以查看更多或更少的日志\n- 开启Debug日志可以查看详细的HTTP请求信息\n- 日志会实时显示在这里";
                     }
                 }
             }
@@ -75,6 +79,14 @@ namespace VPet.Plugin.Image
             SliderDisplayInterval.Value = settings.DisplayInterval;
             SwitchRandomInterval.IsChecked = settings.UseRandomInterval;
             SwitchDebugMode.IsChecked = settings.DebugMode;
+
+            // 加载触发模式设置
+            SwitchTimeTrigger.IsChecked = settings.UseTimeTrigger;
+            SwitchBubbleTrigger.IsChecked = settings.UseBubbleTrigger;
+            SliderBubbleTriggerProbability.Value = settings.BubbleTriggerProbability;
+
+            // 更新UI显示状态
+            UpdateTriggerModeUI();
 
             // 加载LLM情感分析设置
             if (settings.EmotionAnalysis != null)
@@ -110,6 +122,13 @@ namespace VPet.Plugin.Image
                 TextBoxOllamaBaseUrl.Text = settings.EmotionAnalysis.OllamaBaseUrl ?? "http://localhost:11434";
                 ComboBoxOllamaModel.Text = settings.EmotionAnalysis.OllamaModel ?? "llama2";
             }
+
+            // 加载精确图片匹配设置
+            SwitchAccurateImageMatching.IsChecked = settings.UseAccurateImageMatching;
+
+            // 加载日志设置
+            ComboBoxLogLevel.SelectedIndex = settings.LogLevel;
+            SwitchFileLogging.IsChecked = settings.EnableFileLogging;
         }
 
         private void UpdateImagePath()
@@ -179,6 +198,53 @@ namespace VPet.Plugin.Image
             if (settings != null)
             {
                 settings.DebugMode = SwitchDebugMode.IsChecked == true;
+            }
+        }
+
+        private void SwitchTimeTrigger_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings != null)
+            {
+                settings.UseTimeTrigger = SwitchTimeTrigger.IsChecked == true;
+                UpdateTriggerModeUI();
+            }
+        }
+
+        private void SwitchBubbleTrigger_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings != null)
+            {
+                settings.UseBubbleTrigger = SwitchBubbleTrigger.IsChecked == true;
+                UpdateTriggerModeUI();
+            }
+        }
+
+        private void SliderBubbleTriggerProbability_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (settings != null)
+            {
+                settings.BubbleTriggerProbability = (int)SliderBubbleTriggerProbability.Value;
+            }
+        }
+
+        /// <summary>
+        /// 更新触发模式UI显示状态
+        /// </summary>
+        private void UpdateTriggerModeUI()
+        {
+            if (TimeTriggerSettings != null && BubbleTriggerSettings != null)
+            {
+                // 根据开关状态调整设置区域的可见性和可用性
+                bool useTimeTrigger = SwitchTimeTrigger.IsChecked == true;
+                bool useBubbleTrigger = SwitchBubbleTrigger.IsChecked == true;
+                
+                // 时间触发设置区域
+                TimeTriggerSettings.IsEnabled = useTimeTrigger;
+                TimeTriggerSettings.Opacity = useTimeTrigger ? 1.0 : 0.5;
+                
+                // 气泡触发设置区域
+                BubbleTriggerSettings.IsEnabled = useBubbleTrigger;
+                BubbleTriggerSettings.Opacity = useBubbleTrigger ? 1.0 : 0.5;
             }
         }
 
@@ -274,6 +340,40 @@ namespace VPet.Plugin.Image
             if (settings?.EmotionAnalysis != null)
             {
                 settings.EmotionAnalysis.EnableLLMEmotionAnalysis = SwitchEmotionAnalysis.IsChecked == true;
+            }
+        }
+
+        private void SwitchAccurateImageMatching_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings != null)
+            {
+                settings.UseAccurateImageMatching = SwitchAccurateImageMatching.IsChecked == true;
+            }
+        }
+
+        // 日志等级控制事件处理
+        private void ComboBoxLogLevel_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            if (settings != null && ComboBoxLogLevel.SelectedItem is ComboBoxItem selectedItem)
+            {
+                if (int.TryParse(selectedItem.Tag.ToString(), out int logLevel))
+                {
+                    settings.LogLevel = logLevel;
+                    
+                    // 更新静态日志系统
+                    Utils.Logger.SetLogLevel((VPet.Plugin.Image.Utils.LogLevel)logLevel);
+                }
+            }
+        }
+
+        private void SwitchFileLogging_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings != null)
+            {
+                settings.EnableFileLogging = SwitchFileLogging.IsChecked == true;
+                
+                // 更新静态日志系统
+                Utils.Logger.EnableFileLogging = settings.EnableFileLogging;
             }
         }
 
@@ -481,9 +581,9 @@ namespace VPet.Plugin.Image
                 // 创建对应的客户端
                 ILLMClient client = provider switch
                 {
-                    LLMProvider.OpenAI => new OpenAIClient(apiKey, baseUrl),
-                    LLMProvider.Gemini => new GeminiClient(apiKey, baseUrl),
-                    LLMProvider.Ollama => new OllamaClient(baseUrl),
+                    LLMProvider.OpenAI => new OpenAIClient(apiKey, baseUrl, imageMgr: imageMgr),
+                    LLMProvider.Gemini => new GeminiClient(apiKey, baseUrl, imageMgr: imageMgr),
+                    LLMProvider.Ollama => new OllamaClient(baseUrl, imageMgr: imageMgr),
                     _ => throw new NotSupportedException($"不支持的提供商: {provider}")
                 };
 
