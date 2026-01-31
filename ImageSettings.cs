@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text.Json;
 using VPet.Plugin.Image.EmotionAnalysis;
+using VPet.Plugin.Image.Utils;
 
 namespace VPet.Plugin.Image
 {
@@ -53,7 +54,7 @@ namespace VPet.Plugin.Image
         /// <summary>
         /// 是否启用文件日志
         /// </summary>
-        public bool EnableFileLogging { get; set; } = true;
+        public bool EnableFileLogging { get; set; } = false;
 
         /// <summary>
         /// 情感分析设置
@@ -81,6 +82,11 @@ namespace VPet.Plugin.Image
         public int BubbleTriggerProbability { get; set; } = 20;
 
         /// <summary>
+        /// 精确匹配模式版本号：用于检测UseAccurateImageMatching设置变化，变化时清空缓存
+        /// </summary>
+        public int AccurateMatchingVersion { get; set; } = 1;
+
+        /// <summary>
         /// 克隆设置对象
         /// </summary>
         public ImageSettings Clone()
@@ -100,7 +106,8 @@ namespace VPet.Plugin.Image
                 UseTimeTrigger = this.UseTimeTrigger,
                 UseBubbleTrigger = this.UseBubbleTrigger,
                 BubbleTriggerProbability = this.BubbleTriggerProbability,
-                UseAccurateImageMatching = this.UseAccurateImageMatching
+                UseAccurateImageMatching = this.UseAccurateImageMatching,
+                AccurateMatchingVersion = this.AccurateMatchingVersion
             };
         }
 
@@ -122,6 +129,7 @@ namespace VPet.Plugin.Image
                    UseBubbleTrigger == other.UseBubbleTrigger &&
                    BubbleTriggerProbability == other.BubbleTriggerProbability &&
                    UseAccurateImageMatching == other.UseAccurateImageMatching &&
+                   AccurateMatchingVersion == other.AccurateMatchingVersion &&
                    (EmotionAnalysis == null && other.EmotionAnalysis == null ||
                     EmotionAnalysis != null && EmotionAnalysis.Equals(other.EmotionAnalysis));
         }
@@ -215,6 +223,23 @@ namespace VPet.Plugin.Image
             var random = new Random();
             int randomValue = random.Next(1, 101); // 1-100
             return randomValue <= BubbleTriggerProbability;
+        }
+
+        /// <summary>
+        /// 检查并更新精确匹配模式版本（当UseAccurateImageMatching设置变化时）
+        /// </summary>
+        /// <param name="previousSettings">之前的设置</param>
+        /// <returns>是否发生了变化</returns>
+        public bool UpdateAccurateMatchingVersionIfChanged(ImageSettings previousSettings)
+        {
+            if (previousSettings == null || 
+                UseAccurateImageMatching != previousSettings.UseAccurateImageMatching)
+            {
+                AccurateMatchingVersion++;
+                Utils.Logger.Info("ImageSettings", $"精确匹配模式设置发生变化，版本号更新为: {AccurateMatchingVersion}");
+                return true;
+            }
+            return false;
         }
     }
 }

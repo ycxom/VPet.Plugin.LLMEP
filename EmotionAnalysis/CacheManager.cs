@@ -5,6 +5,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using VPet.Plugin.Image.Utils;
 
 namespace VPet.Plugin.Image.EmotionAnalysis
 {
@@ -28,6 +29,8 @@ namespace VPet.Plugin.Image.EmotionAnalysis
         private readonly Dictionary<string, CacheEntry> _memoryCache; // 内存缓存（快速）
         private readonly Dictionary<string, CacheEntry> _persistentCache; // 持久化缓存
         private readonly string _cachePath;
+        private readonly string _versionPath; // 版本文件路径
+        private int _lastKnownVersion = 1; // 上次已知的精确匹配模式版本
         private const int MAX_MEMORY_CACHE_SIZE = 100;
         private const int MAX_PERSISTENT_CACHE_SIZE = 1000;
         private const int CACHE_EXPIRATION_DAYS = 7; // 7天过期
@@ -37,6 +40,7 @@ namespace VPet.Plugin.Image.EmotionAnalysis
         public CacheManager(string cachePath)
         {
             _cachePath = cachePath;
+            _versionPath = Path.ChangeExtension(cachePath, ".version");
             _memoryCache = new Dictionary<string, CacheEntry>();
             _persistentCache = new Dictionary<string, CacheEntry>();
             _lastSaveTime = DateTime.Now;
@@ -49,6 +53,9 @@ namespace VPet.Plugin.Image.EmotionAnalysis
         {
             try
             {
+                // 加载版本信息
+                LoadVersion();
+
                 if (File.Exists(_cachePath))
                 {
                     var json = File.ReadAllText(_cachePath);
@@ -76,14 +83,85 @@ namespace VPet.Plugin.Image.EmotionAnalysis
                         }
 
                         Console.WriteLine($"[Cache] Loaded {validEntries} valid entries, removed {expiredEntries} expired entries");
+                        Utils.Logger.Info("CacheManager", $"加载了 {validEntries} 个有效缓存条目，移除了 {expiredEntries} 个过期条目");
                     }
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[Cache] Load error: {ex.Message}");
+                Utils.Logger.Warning("CacheManager", $"加载缓存失败: {ex.Message}");
                 // 如果加载失败，从空缓存开始
             }
+        }
+
+        /// <summary>
+        /// 加载版本信息
+        /// </summary>
+        private void LoadVersion()
+        {
+            try
+            {
+                if (File.Exists(_versionPath))
+                {
+                    var versionText = File.ReadAllText(_versionPath);
+                    if (int.TryParse(versionText, out int version))
+                    {
+                        _lastKnownVersion = version;
+                        Utils.Logger.Debug("CacheManager", $"加载缓存版本: {_lastKnownVersion}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Warning("CacheManager", $"加载版本信息失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 保存版本信息
+        /// </summary>
+        private void SaveVersion()
+        {
+            try
+            {
+                File.WriteAllText(_versionPath, _lastKnownVersion.ToString());
+                Utils.Logger.Debug("CacheManager", $"保存缓存版本: {_lastKnownVersion}");
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Warning("CacheManager", $"保存版本信息失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 检查版本并在需要时清空缓存
+        /// </summary>
+        /// <param name="currentVersion">当前的精确匹配模式版本</param>
+        /// <returns>是否清空了缓存</returns>
+        public bool CheckVersionAndClearIfNeeded(int currentVersion)
+        {
+            if (currentVersion != _lastKnownVersion)
+            {
+                Utils.Logger.Info("CacheManager", $"检测到精确匹配模式版本变化: {_lastKnownVersion} -> {currentVersion}，清空所有缓存");
+                
+                // 清空内存缓存
+                _memoryCache.Clear();
+                
+                // 清空持久化缓存
+                _persistentCache.Clear();
+                
+                // 更新版本号
+                _lastKnownVersion = currentVersion;
+                
+                // 立即保存空缓存和新版本
+                Save();
+                SaveVersion();
+                
+                Utils.Logger.Info("CacheManager", "缓存已清空，版本已更新");
+                return true;
+            }
+            return false;
         }
 
         /// <summary>
@@ -117,10 +195,12 @@ namespace VPet.Plugin.Image.EmotionAnalysis
 
                 var removedCount = validEntries.Count - topEntries.Count;
                 Console.WriteLine($"[Cache] Saved {topEntries.Count} entries, removed {removedCount} low-priority entries");
+                Utils.Logger.Info("CacheManager", $"保存了 {topEntries.Count} 个缓存条目，移除了 {removedCount} 个低优先级条目");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[Cache] Save error: {ex.Message}");
+                Utils.Logger.Error("CacheManager", $"保存缓存失败: {ex.Message}");
             }
         }
 
@@ -142,6 +222,7 @@ namespace VPet.Plugin.Image.EmotionAnalysis
                     _persistentCache.Remove(hash);
                     emotions = null;
                     Console.WriteLine($"[Cache] Expired entry removed: {text}");
+                    Utils.Logger.Debug("CacheManager", $"移除过期缓存条目: {text}");
                     return false;
                 }
 
@@ -149,6 +230,7 @@ namespace VPet.Plugin.Image.EmotionAnalysis
                 entry.LastUsed = now;
                 emotions = entry.Emotions;
                 Console.WriteLine($"[Cache] Memory hit: {text} -> {string.Join(", ", emotions)}");
+                Utils.Logger.Debug("CacheManager", $"内存缓存命中: {text} -> [{string.Join(", ", emotions)}]");
                 return true;
             }
 
@@ -161,6 +243,7 @@ namespace VPet.Plugin.Image.EmotionAnalysis
                     _persistentCache.Remove(hash);
                     emotions = null;
                     Console.WriteLine($"[Cache] Expired entry removed: {text}");
+                    Utils.Logger.Debug("CacheManager", $"移除过期缓存条目: {text}");
                     return false;
                 }
 
@@ -172,6 +255,7 @@ namespace VPet.Plugin.Image.EmotionAnalysis
                 AddToMemoryCache(hash, entry);
 
                 Console.WriteLine($"[Cache] Persistent hit: {text} -> {string.Join(", ", emotions)}");
+                Utils.Logger.Debug("CacheManager", $"持久化缓存命中: {text} -> [{string.Join(", ", emotions)}]");
                 return true;
             }
 
@@ -203,12 +287,10 @@ namespace VPet.Plugin.Image.EmotionAnalysis
             _persistentCache[hash] = entry;
 
             Console.WriteLine($"[Cache] Cached: {text} -> {string.Join(", ", emotions)}");
+            Utils.Logger.Info("CacheManager", $"缓存新结果: {text} -> [{string.Join(", ", emotions)}]");
 
-            // 检查是否需要保存
-            if (DateTime.Now - _lastSaveTime > _saveInterval)
-            {
-                Save();
-            }
+            // 立即保存缓存以确保数据持久化
+            Save();
         }
 
         /// <summary>

@@ -258,7 +258,44 @@ namespace VPet.Plugin.Image.EmotionAnalysis
                 }
                 else
                 {
-                    Utils.Logger.Debug("EmotionAnalyzer", "精确标签匹配未启用，使用传统模式");
+                    Utils.Logger.Debug("EmotionAnalyzer", "精确标签匹配未启用，使用向量匹配模式");
+                    
+                    // 使用LLM分析获取情感标签
+                    Utils.Logger.Debug("EmotionAnalyzer", "准备调用 AnalyzeEmotionAsync...");
+                    var emotions = await AnalyzeEmotionAsync(text);
+                    Utils.Logger.Debug("EmotionAnalyzer", "AnalyzeEmotionAsync 调用完成");
+                    
+                    if (emotions != null && emotions.Count > 0)
+                    {
+                        Utils.Logger.Info("EmotionAnalyzer", $"情感分析结果: {text} -> [{string.Join(", ", emotions)}]");
+                        
+                        // 使用向量匹配查找图片
+                        var imageSelector = _imageMgr.GetImageSelector();
+                        if (imageSelector != null)
+                        {
+                            Utils.Logger.Debug("EmotionAnalyzer", "开始向量匹配查找图片");
+                            
+                            // 通过ImageSelector进行向量匹配（但不显示图片，只获取图片）
+                            var matchedImage = await GetImageByVectorMatchingAsync(emotions);
+                            if (matchedImage != null)
+                            {
+                                Utils.Logger.Debug("EmotionAnalyzer", "向量匹配成功，返回匹配的图片");
+                                return matchedImage;
+                            }
+                            else
+                            {
+                                Utils.Logger.Debug("EmotionAnalyzer", "向量匹配失败，使用降级方案");
+                            }
+                        }
+                        else
+                        {
+                            Utils.Logger.Warning("EmotionAnalyzer", "ImageSelector未初始化，使用降级方案");
+                        }
+                    }
+                    else
+                    {
+                        Utils.Logger.Debug("EmotionAnalyzer", "未获得有效情感标签，使用降级方案");
+                    }
                 }
 
                 // 降级方案：使用传统的心情匹配
@@ -280,21 +317,19 @@ namespace VPet.Plugin.Image.EmotionAnalysis
                 Utils.Logger.Debug("EmotionAnalyzer", "=== AnalyzeEmotionAsync 开始 ===");
                 Utils.Logger.Debug("EmotionAnalyzer", $"接收到文本: {text}");
                 
+                // 检查版本并在需要时清空缓存（在分析前执行，给用户反悔时间）
+                var currentVersion = _imageMgr.Settings.AccurateMatchingVersion;
+                _cacheManager.CheckVersionAndClearIfNeeded(currentVersion);
+                
                 Utils.Logger.Debug("EmotionAnalyzer", "检查缓存...");
                 
-                // 临时：如果启用精确匹配模式，清空缓存以确保使用最新的标签分析
-                if (_imageMgr.Settings.UseAccurateImageMatching)
+                // 检查缓存（无论是否启用精确匹配模式）
+                if (_cacheManager.TryGetEmotion(text, out var cachedEmotions))
                 {
-                    Utils.Logger.Debug("EmotionAnalyzer", "精确匹配模式下，跳过缓存以确保使用最新标签");
-                    // 不使用缓存，直接进行新的分析
-                }
-                else if (_cacheManager.TryGetEmotion(text, out var cachedEmotions))
-                {
-                    // 传统模式下使用缓存
                     Utils.Logger.Debug("EmotionAnalyzer", $"找到缓存结果: [{string.Join(", ", cachedEmotions)}]");
                     return cachedEmotions;
                 }
-                Utils.Logger.Debug("EmotionAnalyzer", "继续进行新的分析");
+                Utils.Logger.Debug("EmotionAnalyzer", "缓存中未找到结果，继续进行新的分析");
 
                 // 限流检查
                 Utils.Logger.Debug("EmotionAnalyzer", "检查限流...");
@@ -404,6 +439,66 @@ namespace VPet.Plugin.Image.EmotionAnalysis
             }
 
             return emotions;
+        }
+
+        /// <summary>
+        /// 通过向量匹配获取图片
+        /// </summary>
+        private async Task<BitmapImage> GetImageByVectorMatchingAsync(List<string> emotions)
+        {
+            try
+            {
+                var vectorRetriever = _imageMgr.GetVectorRetriever();
+                if (vectorRetriever == null)
+                {
+                    Utils.Logger.Warning("EmotionAnalyzer", "向量检索器未初始化");
+                    return null;
+                }
+
+                // 使用向量检索获取匹配的图片文件名
+                var matchingImages = await vectorRetriever.FindMatchingImagesAsync(emotions, topK: 3);
+                
+                if (matchingImages != null && matchingImages.Count > 0)
+                {
+                    Utils.Logger.Debug("EmotionAnalyzer", $"向量匹配找到 {matchingImages.Count} 张候选图片");
+                    
+                    // 随机选择一张
+                    var random = new Random();
+                    string selectedFilename = matchingImages[random.Next(matchingImages.Count)];
+                    Utils.Logger.Debug("EmotionAnalyzer", $"随机选择图片: {selectedFilename}");
+                    
+                    // 加载图片
+                    var imagePath = _imageMgr.GetImagePath(selectedFilename);
+                    if (!string.IsNullOrEmpty(imagePath))
+                    {
+                        var image = _imageMgr.LoadImageFromPath(imagePath);
+                        if (image != null)
+                        {
+                            Utils.Logger.Debug("EmotionAnalyzer", $"向量匹配图片加载成功: {selectedFilename}");
+                            return image;
+                        }
+                        else
+                        {
+                            Utils.Logger.Warning("EmotionAnalyzer", $"向量匹配图片加载失败: {selectedFilename}");
+                        }
+                    }
+                    else
+                    {
+                        Utils.Logger.Warning("EmotionAnalyzer", $"未找到图片路径: {selectedFilename}");
+                    }
+                }
+                else
+                {
+                    Utils.Logger.Debug("EmotionAnalyzer", "向量匹配未找到候选图片");
+                }
+                
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Error("EmotionAnalyzer", $"向量匹配过程失败: {ex.Message}");
+                return null;
+            }
         }
 
         /// <summary>

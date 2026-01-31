@@ -49,6 +49,9 @@ namespace VPet.Plugin.Image
         // 标签图片匹配器
         private LabelImageMatcher labelImageMatcher;
 
+        // 用于版本控制的设置副本
+        private ImageSettings previousSettings;
+
         public ImageSettings Settings => settings;
 
         public ImageMgr(IMainWindow mainwin) : base(mainwin)
@@ -67,7 +70,8 @@ namespace VPet.Plugin.Image
         {
             try
             {
-                string logPath = Path.Combine(LoaddllPath(), "VPet.Plugin.Image.log");
+                string dataPath = GetDataDirectoryPath();
+                string logPath = Path.Combine(dataPath, "VPet.Plugin.Image.log");
                 Utils.Logger.LogFilePath = logPath;
                 
                 // 根据设置配置日志系统
@@ -92,6 +96,9 @@ namespace VPet.Plugin.Image
             {
                 // 初始化日志系统
                 InitializeLogger();
+                
+                // 迁移旧的数据文件到新目录
+                MigrateOldDataFiles();
                 
                 Utils.Logger.Info("Plugin", "开始加载插件");
 
@@ -164,14 +171,18 @@ namespace VPet.Plugin.Image
         {
             try
             {
-                string dllPath = LoaddllPath();
-                settingsPath = Path.Combine(dllPath, "settings.json");
+                string dataPath = GetDataDirectoryPath();
+                settingsPath = Path.Combine(dataPath, "settings.json");
                 settings = ImageSettings.LoadFromFile(settingsPath);
+                
+                // 初始化设置副本用于版本控制
+                previousSettings = settings.Clone();
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[VPet表情包] 设置加载失败，使用默认设置: {ex.Message}");
                 settings = new ImageSettings();
+                previousSettings = settings.Clone();
             }
         }
 
@@ -313,7 +324,17 @@ namespace VPet.Plugin.Image
         {
             try
             {
+                // 检查精确匹配模式设置是否发生变化，如果变化则更新版本号
+                if (settings.UpdateAccurateMatchingVersionIfChanged(previousSettings))
+                {
+                    Utils.Logger.Info("ImageMgr", "精确匹配模式设置已变化，将在下次LLM分析时清空缓存");
+                }
+
                 settings.SaveToFile(settingsPath);
+                
+                // 更新设置副本
+                previousSettings = settings.Clone();
+                
                 LogMessage("设置已保存到文件");
             }
             catch (Exception ex)
@@ -335,6 +356,87 @@ namespace VPet.Plugin.Image
             catch
             {
                 return "";
+            }
+        }
+
+        /// <summary>
+        /// 获取插件数据目录路径
+        /// </summary>
+        public string GetDataDirectoryPath()
+        {
+            try
+            {
+                string dllPath = LoaddllPath();
+                string dataPath = Path.Combine(dllPath, "plugin", "data");
+                
+                // 确保目录存在
+                if (!Directory.Exists(dataPath))
+                {
+                    Directory.CreateDirectory(dataPath);
+                    Utils.Logger.Info("ImageMgr", $"创建数据目录: {dataPath}");
+                }
+                
+                return dataPath;
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Error("ImageMgr", $"获取数据目录失败: {ex.Message}");
+                return LoaddllPath(); // 降级到根目录
+            }
+        }
+
+        /// <summary>
+        /// 迁移旧的数据文件到新的数据目录
+        /// </summary>
+        private void MigrateOldDataFiles()
+        {
+            try
+            {
+                string dllPath = LoaddllPath();
+                string dataPath = GetDataDirectoryPath();
+                
+                // 迁移设置文件
+                string oldSettingsPath = Path.Combine(dllPath, "settings.json");
+                string newSettingsPath = Path.Combine(dataPath, "settings.json");
+                MigrateFile(oldSettingsPath, newSettingsPath, "设置文件");
+                
+                // 迁移缓存文件
+                string oldCachePath = Path.Combine(dllPath, "emotion_cache.json");
+                string newCachePath = Path.Combine(dataPath, "emotion_cache.json");
+                MigrateFile(oldCachePath, newCachePath, "缓存文件");
+                
+                // 迁移缓存版本文件
+                string oldVersionPath = Path.Combine(dllPath, "emotion_cache.version");
+                string newVersionPath = Path.Combine(dataPath, "emotion_cache.version");
+                MigrateFile(oldVersionPath, newVersionPath, "缓存版本文件");
+                
+                // 迁移日志文件
+                string oldLogPath = Path.Combine(dllPath, "VPet.Plugin.Image.log");
+                string newLogPath = Path.Combine(dataPath, "VPet.Plugin.Image.log");
+                MigrateFile(oldLogPath, newLogPath, "日志文件");
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Warning("ImageMgr", $"数据文件迁移过程中出现错误: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 迁移单个文件
+        /// </summary>
+        private void MigrateFile(string oldPath, string newPath, string fileDescription)
+        {
+            try
+            {
+                if (File.Exists(oldPath) && !File.Exists(newPath))
+                {
+                    File.Move(oldPath, newPath);
+                    Utils.Logger.Info("ImageMgr", $"已迁移{fileDescription}: {oldPath} -> {newPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Warning("ImageMgr", $"迁移{fileDescription}失败: {ex.Message}");
             }
         }
 
@@ -989,8 +1091,9 @@ namespace VPet.Plugin.Image
                 }
 
                 // 创建缓存管理器
-                string dllPath = LoaddllPath();
-                string cachePath = Path.Combine(dllPath, "emotion_cache.json");
+                string dataPath = GetDataDirectoryPath();
+                string dllPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                string cachePath = Path.Combine(dataPath, "emotion_cache.json");
                 cacheManager = new CacheManager(cachePath);
                 cacheManager.Load();
                 LogMessage($"缓存管理器已加载: {cachePath}");
@@ -1604,6 +1707,83 @@ namespace VPet.Plugin.Image
         public LabelImageMatcher GetLabelImageMatcher()
         {
             return labelImageMatcher;
+        }
+
+        /// <summary>
+        /// 获取图片选择器（供 EmotionAnalyzer 调用）
+        /// </summary>
+        public ImageSelector GetImageSelector()
+        {
+            return imageSelector;
+        }
+
+        /// <summary>
+        /// 获取向量检索器（供 EmotionAnalyzer 调用）
+        /// </summary>
+        public IVectorRetriever GetVectorRetriever()
+        {
+            return vectorRetriever;
+        }
+
+        /// <summary>
+        /// 根据文件名获取图片完整路径
+        /// </summary>
+        public string GetImagePath(string filename)
+        {
+            try
+            {
+                string dllPath = LoaddllPath();
+                
+                // 先在内置表情包目录查找
+                string builtInPath = Path.Combine(dllPath, "VPet_Expression", filename);
+                if (File.Exists(builtInPath))
+                {
+                    return builtInPath;
+                }
+                
+                // 再在DIY表情包目录查找
+                string diyPath = Path.Combine(dllPath, "DIY_Expression");
+                var moodFolders = new[] { "Happy", "Nomal", "PoorCondition", "Ill" };
+                
+                foreach (var mood in moodFolders)
+                {
+                    string moodPath = Path.Combine(diyPath, mood, filename);
+                    if (File.Exists(moodPath))
+                    {
+                        return moodPath;
+                    }
+                }
+                
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Error("ImageMgr", $"获取图片路径失败: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// 从路径加载图片
+        /// </summary>
+        public BitmapImage LoadImageFromPath(string imagePath)
+        {
+            try
+            {
+                var bitmapImage = new BitmapImage();
+                bitmapImage.BeginInit();
+                bitmapImage.UriSource = new Uri(imagePath, UriKind.Absolute);
+                bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+                bitmapImage.EndInit();
+                
+                Utils.Logger.Debug("ImageMgr", $"图片加载成功: {imagePath}");
+                return bitmapImage;
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Error("ImageMgr", $"加载图片失败 {imagePath}: {ex.Message}");
+                return null;
+            }
         }
     }
 }

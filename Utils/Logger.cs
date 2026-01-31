@@ -42,7 +42,7 @@ namespace VPet.Plugin.Image.Utils
         private static readonly int _maxEntries = 1000;
 
         public static LogLevel MinLogLevel { get; set; } = LogLevel.Info;
-        public static bool EnableFileLogging { get; set; } = true;
+        public static bool EnableFileLogging { get; set; } = false;
         public static string LogFilePath { get; set; } = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "VPet.Plugin.Image.log");
 
         /// <summary>
