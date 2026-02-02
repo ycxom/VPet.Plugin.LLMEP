@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using VPet.Plugin.LLMEP.Core;
 using VPet.Plugin.LLMEP.EmotionAnalysis;
 using VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient;
 using VPet.Plugin.LLMEP.Services;
@@ -56,7 +57,18 @@ namespace VPet.Plugin.LLMEP
         // 用于版本控制的设置副本
         private ImageSettings previousSettings;
 
+        // 独占会话协调器（供外部插件如 StickerPlugin 使用）
+        private ImagePluginCoordinator imageCoordinator;
+
+        // 定时器用于清理超时会话
+        private DispatcherTimer sessionCleanupTimer;
+
         public ImageSettings Settings => settings;
+
+        /// <summary>
+        /// 图片插件协调器（供外部插件访问）
+        /// </summary>
+        public IImagePluginCoordinator ImageCoordinator => imageCoordinator;
 
         public ImageMgr(IMainWindow mainwin) : base(mainwin)
         {
@@ -117,6 +129,9 @@ namespace VPet.Plugin.LLMEP
 
                 // 添加设置菜单到MOD配置菜单
                 AddSettingsToModConfig();
+
+                // 初始化独占会话协调器
+                InitializeImageCoordinator();
 
                 // 初始化LLM情感分析系统
                 InitializeEmotionAnalysis();
@@ -1656,6 +1671,45 @@ namespace VPet.Plugin.LLMEP
         }
 
         /// <summary>
+        /// 初始化图片插件协调器
+        /// </summary>
+        private void InitializeImageCoordinator()
+        {
+            try
+            {
+                LogMessage("开始初始化图片插件协调器");
+
+                // 创建协调器
+                imageCoordinator = new ImagePluginCoordinator(this);
+
+                // 启动定时器，定期清理超时会话（每 30 秒检查一次）
+                sessionCleanupTimer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromSeconds(30)
+                };
+                sessionCleanupTimer.Tick += (s, e) =>
+                {
+                    try
+                    {
+                        imageCoordinator?.CheckAndCleanupTimedOutSession();
+                    }
+                    catch (Exception ex)
+                    {
+                        LogMessage($"清理超时会话失败: {ex.Message}");
+                    }
+                };
+                sessionCleanupTimer.Start();
+
+                LogMessage("图片插件协调器初始化完成");
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"初始化图片插件协调器失败: {ex.Message}");
+                LogMessage($"堆栈跟踪: {ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
         /// 初始化气泡文本监听器
         /// </summary>
         private void InitializeBubbleTextListener()
@@ -2335,6 +2389,117 @@ namespace VPet.Plugin.LLMEP
             {
                 Utils.Logger.Error("ImageMgr", $"创建AI图片标签生成服务失败: {ex.Message}");
                 return null;
+            }
+        }
+    
+
+
+        /// <summary>
+        /// 从 Base64 字符串显示图片（供外部插件如 StickerPlugin 调用）
+        /// </summary>
+        /// <param name="base64Image">Base64 编码的图片</param>
+        /// <param name="durationSeconds">显示时长（秒）</param>
+        public async Task ShowImageFromBase64Async(string base64Image, int durationSeconds)
+        {
+            try
+            {
+                LogInfo("ImageMgr", $"开始从 Base64 显示图片，时长: {durationSeconds}秒");
+
+                if (string.IsNullOrWhiteSpace(base64Image))
+                {
+                    LogWarning("ImageMgr", "Base64 图片数据为空");
+                    return;
+                }
+
+                // 清理 Base64 字符串（移除可能的前缀和空白字符）
+                string cleanBase64 = base64Image.Trim();
+                
+                // 移除 data:image 前缀（如果存在）
+                if (cleanBase64.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase))
+                {
+                    var commaIndex = cleanBase64.IndexOf(',');
+                    if (commaIndex > 0)
+                    {
+                        cleanBase64 = cleanBase64.Substring(commaIndex + 1);
+                        LogDebug("ImageMgr", "移除了 data:image 前缀");
+                    }
+                }
+
+                // 移除所有空白字符（Base64 不应包含空白字符）
+                cleanBase64 = cleanBase64.Replace(" ", "").Replace("\n", "").Replace("\r", "").Replace("\t", "");
+
+                LogDebug("ImageMgr", $"清理后的 Base64 长度: {cleanBase64.Length}");
+
+                // 解码 Base64
+                byte[] imageBytes;
+                try
+                {
+                    imageBytes = Convert.FromBase64String(cleanBase64);
+                    LogDebug("ImageMgr", $"Base64 解码成功，大小: {imageBytes.Length} 字节");
+                }
+                catch (FormatException ex)
+                {
+                    LogError("ImageMgr", $"Base64 解码失败: {ex.Message}");
+                    LogDebug("ImageMgr", $"Base64 前100个字符: {cleanBase64.Substring(0, Math.Min(100, cleanBase64.Length))}");
+                    return;
+                }
+
+                // 检测是否为 GIF（通过文件头）
+                bool isGif = imageBytes.Length >= 6 &&
+                            imageBytes[0] == 0x47 && imageBytes[1] == 0x49 && imageBytes[2] == 0x46 && // "GIF"
+                            imageBytes[3] == 0x38 && (imageBytes[4] == 0x37 || imageBytes[4] == 0x39) && // "87" or "89"
+                            imageBytes[5] == 0x61; // "a"
+
+                LogDebug("ImageMgr", $"图片格式检测: {(isGif ? "GIF动画" : "静态图片")}");
+
+                // 创建 BitmapImage
+                // 注意：对于 GIF，需要保持 MemoryStream 打开，所以不使用 using
+                var bitmapImage = new BitmapImage();
+                var ms = new MemoryStream(imageBytes);
+                
+                bitmapImage.BeginInit();
+                bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+                bitmapImage.StreamSource = ms;
+                bitmapImage.EndInit();
+                
+                // 对于静态图片，可以冻结并关闭流
+                // 对于 GIF，需要保持流打开，所以不冻结
+                if (!isGif)
+                {
+                    bitmapImage.Freeze();
+                    ms.Dispose();
+                }
+
+                LogDebug("ImageMgr", $"BitmapImage 创建成功，尺寸: {bitmapImage.PixelWidth}x{bitmapImage.PixelHeight}");
+
+                // 显示图片
+                DisplayImage(bitmapImage, isGif);
+
+                // 等待指定时长
+                await Task.Delay(durationSeconds * 1000);
+
+                // 隐藏图片
+                HideImage();
+
+                // 清理 GIF 的 MemoryStream
+                if (isGif)
+                {
+                    try
+                    {
+                        ms.Dispose();
+                    }
+                    catch
+                    {
+                        // 忽略清理错误
+                    }
+                }
+
+                LogInfo("ImageMgr", "Base64 图片显示完成");
+            }
+            catch (Exception ex)
+            {
+                LogError("ImageMgr", $"从 Base64 显示图片失败: {ex.Message}");
+                LogDebug("ImageMgr", $"错误堆栈: {ex.StackTrace}");
             }
         }
     }

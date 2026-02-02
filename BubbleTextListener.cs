@@ -84,6 +84,13 @@ namespace VPet.Plugin.LLMEP
                     return;
                 }
 
+                // 检查是否处于独占会话（气泡捕获屏蔽）
+                if (_imageMgr.ImageCoordinator != null && !_imageMgr.ImageCoordinator.IsBubbleCaptureEnabled())
+                {
+                    _imageMgr.LogMessage("SayProcess: 独占会话期间，屏蔽气泡文本捕获");
+                    return;
+                }
+
                 _imageMgr.LogMessage("SayProcess: 开始获取气泡文本");
 
                 // 获取文本内容
