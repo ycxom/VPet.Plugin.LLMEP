@@ -1068,8 +1068,34 @@ namespace VPet.Plugin.LLMEP
                     return;
                 }
 
+                DisplayImageInternal(imageToShow, forceIsGif);
+            }
+            catch (Exception ex)
+            {
+                LogError("ImageMgr", $"显示表情包失败: {ex.Message}");
+                LogDebug("ImageMgr", $"错误堆栈: {ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// 显示图片的内部实现（假设已经在 UI 线程中）
+        /// </summary>
+        private void DisplayImageInternal(BitmapImage imageToShow, bool? forceIsGif = null)
+        {
+            try
+            {
                 LogDebug("ImageMgr", "开始显示表情包");
-                LogDebug("ImageMgr", $"图片路径: {imageToShow.UriSource?.ToString() ?? "未知"}");
+                
+                // 只在有 UriSource 时才记录路径
+                if (imageToShow.UriSource != null)
+                {
+                    LogDebug("ImageMgr", $"图片路径: {imageToShow.UriSource}");
+                }
+                else
+                {
+                    LogDebug("ImageMgr", "图片来源: Base64/内存流");
+                }
+                
                 LogDebug("ImageMgr", $"图片尺寸: {imageToShow.PixelWidth}x{imageToShow.PixelHeight}");
 
                 image.Visibility = Visibility.Visible;
@@ -2452,28 +2478,46 @@ namespace VPet.Plugin.LLMEP
 
                 LogDebug("ImageMgr", $"图片格式检测: {(isGif ? "GIF动画" : "静态图片")}");
 
-                // 创建 BitmapImage
-                // 注意：对于 GIF，需要保持 MemoryStream 打开，所以不使用 using
-                var bitmapImage = new BitmapImage();
-                var ms = new MemoryStream(imageBytes);
-                
-                bitmapImage.BeginInit();
-                bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                bitmapImage.StreamSource = ms;
-                bitmapImage.EndInit();
-                
-                // 对于静态图片，可以冻结并关闭流
-                // 对于 GIF，需要保持流打开，所以不冻结
-                if (!isGif)
+                // 在 UI 线程中创建 BitmapImage 并显示
+                MemoryStream msToDispose = null;
+                await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
-                    bitmapImage.Freeze();
-                    ms.Dispose();
-                }
+                    try
+                    {
+                        // 创建 BitmapImage
+                        // 注意：对于 GIF，需要保持 MemoryStream 打开，所以不使用 using
+                        var bitmapImage = new BitmapImage();
+                        var ms = new MemoryStream(imageBytes);
+                        
+                        bitmapImage.BeginInit();
+                        bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+                        bitmapImage.StreamSource = ms;
+                        bitmapImage.EndInit();
+                        
+                        // 对于静态图片，可以冻结并关闭流
+                        // 对于 GIF，需要保持流打开，所以不冻结
+                        if (!isGif)
+                        {
+                            bitmapImage.Freeze();
+                            ms.Dispose();
+                        }
+                        else
+                        {
+                            // 保存 MemoryStream 引用以便稍后清理
+                            msToDispose = ms;
+                        }
 
-                LogDebug("ImageMgr", $"BitmapImage 创建成功，尺寸: {bitmapImage.PixelWidth}x{bitmapImage.PixelHeight}");
+                        LogDebug("ImageMgr", $"BitmapImage 创建成功，尺寸: {bitmapImage.PixelWidth}x{bitmapImage.PixelHeight}");
 
-                // 显示图片
-                DisplayImage(bitmapImage, isGif);
+                        // 显示图片（已经在 UI 线程中，直接调用内部逻辑）
+                        DisplayImageInternal(bitmapImage, isGif);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogError("ImageMgr", $"在 UI 线程中创建/显示图片失败: {ex.Message}");
+                        LogDebug("ImageMgr", $"错误堆栈: {ex.StackTrace}");
+                    }
+                });
 
                 // 等待指定时长
                 await Task.Delay(durationSeconds * 1000);
@@ -2482,11 +2526,11 @@ namespace VPet.Plugin.LLMEP
                 HideImage();
 
                 // 清理 GIF 的 MemoryStream
-                if (isGif)
+                if (msToDispose != null)
                 {
                     try
                     {
-                        ms.Dispose();
+                        msToDispose.Dispose();
                     }
                     catch
                     {

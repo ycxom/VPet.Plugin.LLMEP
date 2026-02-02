@@ -81,6 +81,13 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
             {
                 _imageMgr.LogDebug("SpeechCapturer", "=== 开始处理气泡文本 ===");
 
+                // 检查是否处于独占会话（气泡捕获屏蔽）
+                if (_imageMgr?.ImageCoordinator != null && !_imageMgr.ImageCoordinator.IsBubbleCaptureEnabled())
+                {
+                    _imageMgr.LogInfo("SpeechCapturer", "独占会话期间，屏蔽气泡文本捕获");
+                    return;
+                }
+
                 // 检查功能是否启用
                 var settings = Settings;
                 if (settings?.EmotionAnalysis == null || !settings.EmotionAnalysis.EnableLLMEmotionAnalysis)

@@ -359,45 +359,56 @@ namespace VPet.Plugin.LLMEP.Services
                 _currentGifStream?.Dispose();
                 _currentGifStream = null;
 
-                // 创建 BitmapImage
-                BitmapImage bitmapImage;
-                MemoryStream? gifStream = null;
-                
-                if (isGif)
+                // 在 UI 线程中创建 BitmapImage 并显示
+                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                 {
-                    // GIF图片：保持流打开以便WpfAnimatedGif播放动画
-                    gifStream = new MemoryStream(imageBytes);
-                    bitmapImage = new BitmapImage();
-                    bitmapImage.BeginInit();
-                    bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmapImage.StreamSource = gifStream;
-                    bitmapImage.EndInit();
-                    // GIF不能冻结，否则WpfAnimatedGif无法播放
-                    
-                    // 保存流引用以便后续释放
-                    _currentGifStream = gifStream;
-                    Logger.Debug("OnlineStickerManager", "GIF流已创建并保存");
-                }
-                else
-                {
-                    // 静态图片：使用using块正常关闭流
-                    using (var stream = new MemoryStream(imageBytes))
+                    try
                     {
-                        bitmapImage = new BitmapImage();
-                        bitmapImage.BeginInit();
-                        bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                        bitmapImage.StreamSource = stream;
-                        bitmapImage.EndInit();
-                        bitmapImage.Freeze(); // 静态图片可以冻结
+                        BitmapImage bitmapImage;
+                        MemoryStream? gifStream = null;
+                        
+                        if (isGif)
+                        {
+                            // GIF图片：保持流打开以便WpfAnimatedGif播放动画
+                            gifStream = new MemoryStream(imageBytes);
+                            bitmapImage = new BitmapImage();
+                            bitmapImage.BeginInit();
+                            bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+                            bitmapImage.StreamSource = gifStream;
+                            bitmapImage.EndInit();
+                            // GIF不能冻结，否则WpfAnimatedGif无法播放
+                            
+                            // 保存流引用以便后续释放
+                            _currentGifStream = gifStream;
+                            Logger.Debug("OnlineStickerManager", "GIF流已创建并保存");
+                        }
+                        else
+                        {
+                            // 静态图片：使用using块正常关闭流
+                            using (var stream = new MemoryStream(imageBytes))
+                            {
+                                bitmapImage = new BitmapImage();
+                                bitmapImage.BeginInit();
+                                bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+                                bitmapImage.StreamSource = stream;
+                                bitmapImage.EndInit();
+                                bitmapImage.Freeze(); // 静态图片可以冻结
+                            }
+                        }
+
+                        Logger.Debug("OnlineStickerManager", $"BitmapImage创建成功: {bitmapImage.PixelWidth}x{bitmapImage.PixelHeight}");
+                        Logger.Info("OnlineStickerManager", $"在线表情包准备显示: {(isGif ? "GIF动画" : "静态图片")}");
+
+                        // 显示图片（传递isGif信息确保GIF动画能正确播放）
+                        _imageMgr.DisplayImagePublic(bitmapImage, isGif);
+                        Logger.Info("OnlineStickerManager", "在线表情包显示成功");
                     }
-                }
-
-                Logger.Debug("OnlineStickerManager", $"BitmapImage创建成功: {bitmapImage.PixelWidth}x{bitmapImage.PixelHeight}");
-                Logger.Info("OnlineStickerManager", $"在线表情包准备显示: {(isGif ? "GIF动画" : "静态图片")}");
-
-                // 显示图片（传递isGif信息确保GIF动画能正确播放）
-                _imageMgr.DisplayImagePublic(bitmapImage, isGif);
-                Logger.Info("OnlineStickerManager", "在线表情包显示成功");
+                    catch (Exception ex)
+                    {
+                        Logger.Error("OnlineStickerManager", $"在UI线程中创建/显示图片失败: {ex.Message}");
+                        Logger.Debug("OnlineStickerManager", $"错误堆栈: {ex.StackTrace}");
+                    }
+                });
 
                 // 自动隐藏
                 await Task.Delay(DisplayDurationSeconds * 1000);
