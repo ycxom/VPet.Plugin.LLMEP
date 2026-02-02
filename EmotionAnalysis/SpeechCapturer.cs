@@ -13,21 +13,21 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
         private readonly IMainWindow _mainWindow;
         private readonly IEmotionAnalyzer _emotionAnalyzer;
         private readonly ImageSelector _imageSelector;
-        private readonly ImageSettings _settings;
         private readonly ImageMgr _imageMgr;
         private bool _isInitialized = false;
+
+        // 通过属性获取当前设置，确保总是使用最新值
+        private ImageSettings Settings => _imageMgr?.Settings;
 
         public SpeechCapturer(
             IMainWindow mainWindow,
             IEmotionAnalyzer emotionAnalyzer,
             ImageSelector imageSelector,
-            ImageSettings settings,
             ImageMgr imageMgr = null)
         {
             _mainWindow = mainWindow;
             _emotionAnalyzer = emotionAnalyzer;
             _imageSelector = imageSelector;
-            _settings = settings;
             _imageMgr = imageMgr;
         }
 
@@ -82,7 +82,8 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 _imageMgr.LogDebug("SpeechCapturer", "=== 开始处理气泡文本 ===");
 
                 // 检查功能是否启用
-                if (_settings?.EmotionAnalysis == null || !_settings.EmotionAnalysis.EnableLLMEmotionAnalysis)
+                var settings = Settings;
+                if (settings?.EmotionAnalysis == null || !settings.EmotionAnalysis.EnableLLMEmotionAnalysis)
                 {
                     _imageMgr.LogDebug("SpeechCapturer", "LLM情感分析未启用，跳过处理");
                     return;
@@ -119,19 +120,19 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 _imageMgr.LogInfo("SpeechCapturer", $"捕获气泡文本: {textPreview}");
 
                 // 检查是否使用气泡触发模式
-                if (_settings.UseBubbleTrigger)
+                if (settings.UseBubbleTrigger)
                 {
                     _imageMgr.LogDebug("SpeechCapturer", "气泡触发已启用，进行概率检查");
 
                     // 在入口处进行概率检查，未命中时直接返回，不进行任何处理
-                    if (!_settings.ShouldTriggerBubble())
+                    if (!settings.ShouldTriggerBubble())
                     {
-                        _imageMgr.LogDebug("SpeechCapturer", $"概率未命中 ({_settings.BubbleTriggerProbability}%)，跳过LLM分析和图片显示");
+                        _imageMgr.LogDebug("SpeechCapturer", $"概率未命中 ({settings.BubbleTriggerProbability}%)，跳过LLM分析和图片显示");
                         return;
                     }
 
                     // 概率命中，通知 ImageMgr 显示图片
-                    _imageMgr.LogDebug("SpeechCapturer", $"概率命中 ({_settings.BubbleTriggerProbability}%)，通知 ImageMgr 显示图片");
+                    _imageMgr.LogDebug("SpeechCapturer", $"概率命中 ({settings.BubbleTriggerProbability}%)，通知 ImageMgr 显示图片");
                     _imageMgr?.HandleBubbleProbabilityFromSpeechCapturer();
                 }
                 else

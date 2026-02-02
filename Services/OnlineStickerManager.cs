@@ -21,6 +21,9 @@ namespace VPet.Plugin.LLMEP.Services
         private readonly Random _random;
         private List<string>? _availableTags;
         private DateTime _tagsLastUpdate = DateTime.MinValue;
+        
+        // 用于保存当前显示的GIF流的引用（GIF需要保持流打开才能播放）
+        private MemoryStream? _currentGifStream;
 
         // 配置参数
         public bool IsEnabled { get; set; } = false;
@@ -352,28 +355,62 @@ namespace VPet.Plugin.LLMEP.Services
                     }
                 }
 
+                // 关闭之前的GIF流（如果存在）
+                _currentGifStream?.Dispose();
+                _currentGifStream = null;
+
                 // 创建 BitmapImage
                 BitmapImage bitmapImage;
-                using (var stream = new MemoryStream(imageBytes))
+                MemoryStream? gifStream = null;
+                
+                if (isGif)
                 {
+                    // GIF图片：保持流打开以便WpfAnimatedGif播放动画
+                    gifStream = new MemoryStream(imageBytes);
                     bitmapImage = new BitmapImage();
                     bitmapImage.BeginInit();
                     bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmapImage.StreamSource = stream;
+                    bitmapImage.StreamSource = gifStream;
                     bitmapImage.EndInit();
-                    bitmapImage.Freeze(); // 冻结以便跨线程使用
+                    // GIF不能冻结，否则WpfAnimatedGif无法播放
+                    
+                    // 保存流引用以便后续释放
+                    _currentGifStream = gifStream;
+                    Logger.Debug("OnlineStickerManager", "GIF流已创建并保存");
+                }
+                else
+                {
+                    // 静态图片：使用using块正常关闭流
+                    using (var stream = new MemoryStream(imageBytes))
+                    {
+                        bitmapImage = new BitmapImage();
+                        bitmapImage.BeginInit();
+                        bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+                        bitmapImage.StreamSource = stream;
+                        bitmapImage.EndInit();
+                        bitmapImage.Freeze(); // 静态图片可以冻结
+                    }
                 }
 
                 Logger.Debug("OnlineStickerManager", $"BitmapImage创建成功: {bitmapImage.PixelWidth}x{bitmapImage.PixelHeight}");
                 Logger.Info("OnlineStickerManager", $"在线表情包准备显示: {(isGif ? "GIF动画" : "静态图片")}");
 
-                // 显示图片
-                _imageMgr.DisplayImagePublic(bitmapImage);
+                // 显示图片（传递isGif信息确保GIF动画能正确播放）
+                _imageMgr.DisplayImagePublic(bitmapImage, isGif);
                 Logger.Info("OnlineStickerManager", "在线表情包显示成功");
 
                 // 自动隐藏
                 await Task.Delay(DisplayDurationSeconds * 1000);
                 _imageMgr.HideImagePublic();
+                
+                // 隐藏后释放GIF流
+                if (_currentGifStream != null)
+                {
+                    _currentGifStream.Dispose();
+                    _currentGifStream = null;
+                    Logger.Debug("OnlineStickerManager", "GIF流已释放");
+                }
+                
                 Logger.Debug("OnlineStickerManager", "在线表情包已自动隐藏");
             }
             catch (FormatException ex)
@@ -482,6 +519,8 @@ namespace VPet.Plugin.LLMEP.Services
 
         public void Dispose()
         {
+            _currentGifStream?.Dispose();
+            _currentGifStream = null;
             _stickerService?.Dispose();
             Logger.Info("OnlineStickerManager", "在线表情包管理器已释放");
         }

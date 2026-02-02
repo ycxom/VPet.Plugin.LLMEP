@@ -979,14 +979,57 @@ namespace VPet.Plugin.LLMEP
 
         private bool IsGifImage(BitmapImage image)
         {
-            if (image?.UriSource == null)
+            if (image == null)
                 return false;
 
-            string extension = Path.GetExtension(image.UriSource.ToString()).ToLower();
-            return extension == ".gif";
+            // 首先检查 UriSource（本地文件）
+            if (image.UriSource != null)
+            {
+                string extension = Path.GetExtension(image.UriSource.ToString()).ToLower();
+                if (extension == ".gif")
+                    return true;
+            }
+
+            // 对于没有 UriSource 的图片（如 Base64 加载的），检查格式
+            // GIF 的魔术数字: GIF87a 或 GIF89a
+            try
+            {
+                // 尝试从 StreamSource 读取文件头
+                if (image.StreamSource != null && image.StreamSource.CanRead)
+                {
+                    long originalPosition = image.StreamSource.Position;
+                    try
+                    {
+                        byte[] header = new byte[6];
+                        image.StreamSource.Position = 0;
+                        int read = image.StreamSource.Read(header, 0, 6);
+                        if (read >= 6)
+                        {
+                            // 检查 GIF 文件头: "GIF87a" 或 "GIF89a"
+                            if (header[0] == 0x47 && header[1] == 0x49 && header[2] == 0x46 && // "GIF"
+                                header[3] == 0x38 && (header[4] == 0x37 || header[4] == 0x39) && // "87" or "89"
+                                header[5] == 0x61) // "a"
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        // 恢复原始位置
+                        image.StreamSource.Position = originalPosition;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug("ImageMgr", $"检查GIF文件头失败: {ex.Message}");
+            }
+
+            return false;
         }
 
-        private void DisplayImage(BitmapImage imageToShow)
+        private void DisplayImage(BitmapImage imageToShow, bool? forceIsGif = null)
         {
             try
             {
@@ -1006,7 +1049,7 @@ namespace VPet.Plugin.LLMEP
                 if (!Application.Current.Dispatcher.CheckAccess())
                 {
                     LogDebug("ImageMgr", "切换到UI线程显示表情包");
-                    Application.Current.Dispatcher.Invoke(() => DisplayImage(imageToShow));
+                    Application.Current.Dispatcher.Invoke(() => DisplayImage(imageToShow, forceIsGif));
                     return;
                 }
 
@@ -1017,7 +1060,10 @@ namespace VPet.Plugin.LLMEP
                 image.Visibility = Visibility.Visible;
                 LogDebug("ImageMgr", "UI组件已设置为可见");
 
-                if (IsGifImage(imageToShow))
+                // 使用强制指定的isGif值，或者自动检测
+                bool isGif = forceIsGif ?? IsGifImage(imageToShow);
+                
+                if (isGif)
                 {
                     LogDebug("ImageMgr", "检测到GIF动画，使用动画显示模式");
                     // For GIF images
@@ -1063,9 +1109,28 @@ namespace VPet.Plugin.LLMEP
 
                 LogDebug("ImageMgr", "开始隐藏表情包");
 
+                // 先隐藏UI，再清理资源
                 image.Visibility = Visibility.Collapsed;
-                ImageBehavior.SetAnimatedSource(image.Image, null);
-                image.Image.Source = null;
+                
+                try
+                {
+                    // 清理GIF动画源
+                    ImageBehavior.SetAnimatedSource(image.Image, null);
+                }
+                catch (Exception ex)
+                {
+                    LogDebug("ImageMgr", $"清理GIF动画源时出现异常: {ex.Message}");
+                }
+                
+                try
+                {
+                    // 清理图片源
+                    image.Image.Source = null;
+                }
+                catch (Exception ex)
+                {
+                    LogDebug("ImageMgr", $"清理图片源时出现异常: {ex.Message}");
+                }
 
                 LogInfo("ImageMgr", "表情包已隐藏");
             }
@@ -1360,7 +1425,7 @@ namespace VPet.Plugin.LLMEP
                 LogMessage("图片选择器已创建");
 
                 // 创建语音捕获器
-                speechCapturer = new SpeechCapturer(MW, emotionAnalyzer, imageSelector, settings, this);
+                speechCapturer = new SpeechCapturer(MW, emotionAnalyzer, imageSelector, this);
                 speechCapturer.Initialize();
                 LogMessage("语音捕获器已初始化");
 
@@ -1803,18 +1868,26 @@ namespace VPet.Plugin.LLMEP
         /// </summary>
         public void DisplayImagePublic(BitmapImage imageToShow)
         {
+            DisplayImagePublic(imageToShow, null);
+        }
+
+        /// <summary>
+        /// 公共方法：显示指定的表情包，支持强制指定是否为GIF
+        /// </summary>
+        public void DisplayImagePublic(BitmapImage imageToShow, bool? forceIsGif)
+        {
             try
             {
                 // 确保在UI线程中执行
                 if (!Application.Current.Dispatcher.CheckAccess())
                 {
                     LogMessage("ImageSelector 请求显示表情包（切换到UI线程）");
-                    Application.Current.Dispatcher.Invoke(() => DisplayImagePublic(imageToShow));
+                    Application.Current.Dispatcher.Invoke(() => DisplayImagePublic(imageToShow, forceIsGif));
                     return;
                 }
 
                 LogMessage("ImageSelector 请求显示表情包");
-                DisplayImage(imageToShow);
+                DisplayImage(imageToShow, forceIsGif);
             }
             catch (Exception ex)
             {
