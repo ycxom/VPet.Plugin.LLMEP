@@ -239,6 +239,29 @@ namespace VPet.Plugin.LLMEP
         }
 
         /// <summary>
+        /// 检查图片是否已被LLM处理过
+        /// </summary>
+        public bool IsImageProcessedByLLM(string relativePath)
+        {
+            var tags = GetImageTags(relativePath);
+            return tags.Contains("__llm_processed__");
+        }
+
+        /// <summary>
+        /// 标记图片已被LLM处理
+        /// </summary>
+        public void MarkImageAsProcessedByLLM(string relativePath)
+        {
+            var tags = GetImageTags(relativePath);
+            if (!tags.Contains("__llm_processed__"))
+            {
+                tags.Add("__llm_processed__");
+                SetImageTags(relativePath, tags);
+                Logger.Info("LabelManager", $"标记图片为已处理: {relativePath}");
+            }
+        }
+
+        /// <summary>
         /// 创建空的label.json文件（如果不存在）
         /// </summary>
         public void CreateEmptyLabelFileIfNotExists()

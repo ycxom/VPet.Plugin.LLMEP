@@ -81,8 +81,8 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- LLM情感分析 Tab -->
-            <TabItem Header="🤖 LLM情感分析">
+            <!-- LLM设置 Tab -->
+            <TabItem Header="🤖 LLM设置">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
                     <StackPanel>
                         <!-- LLM功能开关 -->
@@ -92,6 +92,9 @@
                                         Checked="CheckBoxEmotionAnalysis_Changed" Unchecked="CheckBoxEmotionAnalysis_Changed"/>
                                 <CheckBox x:Name="CheckBoxAccurateImageMatching" Content="更加精确的使用表情包" Margin="0,5"
                                         Checked="CheckBoxAccurateImageMatching_Changed" Unchecked="CheckBoxAccurateImageMatching_Changed"/>
+                                <CheckBox x:Name="CheckBoxVisionModel" Content="是可读取图片的模型(Vision)" Margin="0,5"
+                                        Checked="CheckBoxVisionModel_Changed" Unchecked="CheckBoxVisionModel_Changed"/>
+                                <TextBlock Text="ℹ️ 启用后可使用AI识别图片并生成标签功能" Foreground="#666666" FontSize="12" Margin="20,0,0,0" TextWrapping="Wrap"/>
                             </StackPanel>
                         </GroupBox>
 
@@ -260,18 +263,31 @@
                 <Grid Margin="20">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
+                    <!-- AI标签生成设置 -->
+                    <GroupBox Grid.Row="0" Header="🤖 AI标签生成" Margin="0,0,0,15">
+                        <StackPanel Margin="10">
+                            <CheckBox x:Name="CheckBoxAIImageTagging" Content="允许AI识别图片并生成标签" Margin="0,5"
+                                    Checked="CheckBoxAIImageTagging_Changed" Unchecked="CheckBoxAIImageTagging_Changed"/>
+                            <TextBlock Text="ℹ️ 需要先在LLM设置中启用&quot;是可读取图片的模型&quot;，并配置支持Vision的LLM模型（如Gemini 2.5 flash等）" 
+                                     Foreground="#666666" FontSize="12" Margin="20,5,0,0" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="TextBlockAIProcessingStatus" Text="状态: 等待开始" Margin="20,10,0,0" FontSize="12" Foreground="#0066CC"/>
+                        </StackPanel>
+                    </GroupBox>
+
                     <!-- 顶部操作栏 -->
-                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,20">
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,15">
                         <Button x:Name="ButtonScanImages" Content="🔍 扫描图片" Width="120" Margin="0,0,10,0" Click="ButtonScanImages_Click"/>
                         <Button x:Name="ButtonSaveLabels" Content="💾 保存标签" Width="120" Click="ButtonSaveLabels_Click"/>
+                        <Button x:Name="ButtonStartAIProcessing" Content="🤖 开始AI处理" Width="120" Margin="10,0,0,0" Click="ButtonStartAIProcessing_Click"/>
                     </StackPanel>
 
                     <!-- 主要内容区域 -->
-                    <Grid Grid.Row="1">
+                    <Grid Grid.Row="2">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="300"/>
                             <ColumnDefinition Width="*"/>
@@ -332,7 +348,7 @@
                     </Grid>
 
                     <!-- 底部状态栏 -->
-                    <Border Grid.Row="2" Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="1" Padding="10" Margin="0,20,0,0">
+                    <Border Grid.Row="3" Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="1" Padding="10" Margin="0,20,0,0">
                         <TextBlock x:Name="TextBlockStatus" Text="准备就绪" FontSize="12" Foreground="#666666"/>
                     </Border>
                 </Grid>

@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using System.Windows.Threading;
 using VPet.Plugin.LLMEP.EmotionAnalysis;
 using VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient;
+using VPet.Plugin.LLMEP.Services;
 
 namespace VPet.Plugin.LLMEP
 {
@@ -27,6 +28,10 @@ namespace VPet.Plugin.LLMEP
         private Dictionary<string, List<ImageInfo>> scannedImages;
         private ImageInfo currentSelectedImage;
 
+        // AI图片标签生成服务
+        private LLMImageTaggingService aiTaggingService;
+        private bool isAIProcessing = false;
+
         public ImageSettingWindow(ImageMgr imageMgr)
         {
             InitializeComponent();
@@ -43,6 +48,16 @@ namespace VPet.Plugin.LLMEP
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"标签管理器初始化失败: {ex.Message}");
+            }
+
+            // 初始化AI标签生成服务
+            try
+            {
+                InitializeAITaggingService();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"AI标签生成服务初始化失败: {ex.Message}");
             }
 
             // 加载设置到UI
@@ -129,6 +144,7 @@ namespace VPet.Plugin.LLMEP
             {
                 CheckBoxEmotionAnalysis.IsChecked = settings.EmotionAnalysis.EnableLLMEmotionAnalysis;
                 CheckBoxAccurateImageMatching.IsChecked = settings.UseAccurateImageMatching;
+                CheckBoxVisionModel.IsChecked = settings.EmotionAnalysis.IsVisionModel;
 
                 // 设置提供商
                 switch (settings.EmotionAnalysis.Provider)
@@ -162,6 +178,9 @@ namespace VPet.Plugin.LLMEP
                 TextBoxOllamaBaseUrl.Text = settings.EmotionAnalysis.OllamaBaseUrl ?? "http://localhost:11434";
                 ComboBoxOllamaModel.Text = settings.EmotionAnalysis.OllamaModel ?? "llama2";
             }
+
+            // 加载AI图片标签生成设置
+            CheckBoxAIImageTagging.IsChecked = settings.EnableAIImageTagging;
 
             // 加载在线表情包设置
             if (settings.OnlineSticker != null)
@@ -437,6 +456,22 @@ namespace VPet.Plugin.LLMEP
             if (settings != null && sender is CheckBox checkBox)
             {
                 settings.UseAccurateImageMatching = checkBox.IsChecked == true;
+            }
+        }
+
+        private void CheckBoxVisionModel_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings?.EmotionAnalysis != null && sender is CheckBox checkBox)
+            {
+                settings.EmotionAnalysis.IsVisionModel = checkBox.IsChecked == true;
+            }
+        }
+
+        private void CheckBoxAIImageTagging_Changed(object sender, RoutedEventArgs e)
+        {
+            if (settings != null && sender is CheckBox checkBox)
+            {
+                settings.EnableAIImageTagging = checkBox.IsChecked == true;
             }
         }
 
@@ -1038,6 +1073,148 @@ namespace VPet.Plugin.LLMEP
             catch (Exception ex)
             {
                 Utils.Logger.Error("LabelManager", $"初始化标签管理器失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 初始化AI标签生成服务
+        /// </summary>
+        private void InitializeAITaggingService()
+        {
+            try
+            {
+                string pluginDir = imageMgr.LoaddllPath();
+                aiTaggingService = new LLMImageTaggingService(imageMgr, labelManager, pluginDir);
+
+                // 订阅进度事件
+                aiTaggingService.ProgressChanged += (s, e) =>
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        if (TextBlockAIProcessingStatus != null)
+                        {
+                            TextBlockAIProcessingStatus.Text = $"状态: {e.Status} ({e.CurrentIndex}/{e.TotalCount})";
+                        }
+                        if (TextBlockStatus != null)
+                        {
+                            TextBlockStatus.Text = $"AI处理中: {e.CurrentImage}";
+                        }
+                    }));
+                };
+
+                // 订阅完成事件
+                aiTaggingService.ProcessingCompleted += (s, e) =>
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        isAIProcessing = false;
+                        UpdateAIProcessingUI();
+
+                        string message = $"AI标签生成完成！\n成功: {e.SuccessCount} 张\n失败: {e.FailedCount} 张\n总计: {e.TotalCount} 张";
+                        MessageBox.Show(message, "处理完成", MessageBoxButton.OK, MessageBoxImage.Information);
+
+                        if (TextBlockAIProcessingStatus != null)
+                        {
+                            TextBlockAIProcessingStatus.Text = $"状态: 处理完成 (成功 {e.SuccessCount}, 失败 {e.FailedCount})";
+                        }
+                        if (TextBlockStatus != null)
+                        {
+                            TextBlockStatus.Text = "AI处理完成";
+                        }
+
+                        // 刷新图片树以显示新标签
+                        scannedImages = labelManager.ScanImages();
+                        UpdateImageTree();
+                    }));
+                };
+
+                Utils.Logger.Debug("LabelManager", "AI标签生成服务初始化完成");
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Error("LabelManager", $"初始化AI标签生成服务失败: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 更新AI处理UI状态
+        /// </summary>
+        private void UpdateAIProcessingUI()
+        {
+            if (ButtonStartAIProcessing != null)
+            {
+                ButtonStartAIProcessing.Content = isAIProcessing ? "⏹️ 停止处理" : "🤖 开始AI处理";
+            }
+        }
+
+        /// <summary>
+        /// 开始/停止AI处理按钮点击事件
+        /// </summary>
+        private async void ButtonStartAIProcessing_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (isAIProcessing)
+                {
+                    // 停止处理
+                    aiTaggingService?.StopProcessing();
+                    isAIProcessing = false;
+                    UpdateAIProcessingUI();
+
+                    if (TextBlockAIProcessingStatus != null)
+                    {
+                        TextBlockAIProcessingStatus.Text = "状态: 已停止";
+                    }
+                    return;
+                }
+
+                // 检查是否启用了AI标签生成功能
+                if (!settings.EnableAIImageTagging)
+                {
+                    MessageBox.Show("请先启用\"允许AI识别图片并生成标签\"选项", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                // 检查是否启用了视觉模型
+                if (!settings.EmotionAnalysis.IsVisionModel)
+                {
+                    MessageBox.Show("请先在LLM设置中启用\"是可读取图片的模型(Vision)\"选项", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                // 检查LLM配置是否有效
+                if (string.IsNullOrEmpty(settings.EmotionAnalysis.OpenAIApiKey) && 
+                    string.IsNullOrEmpty(settings.EmotionAnalysis.GeminiApiKey) &&
+                    settings.EmotionAnalysis.Provider != LLMProvider.Free)
+                {
+                    MessageBox.Show("请先配置有效的LLM API密钥", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                // 开始处理
+                isAIProcessing = true;
+                UpdateAIProcessingUI();
+
+                if (TextBlockAIProcessingStatus != null)
+                {
+                    TextBlockAIProcessingStatus.Text = "状态: 准备开始...";
+                }
+
+                // 保存当前设置到ImageMgr
+                imageMgr.ApplySettings(settings);
+
+                // 异步启动处理
+                await System.Threading.Tasks.Task.Run(async () =>
+                {
+                    await aiTaggingService.StartProcessingAsync(settings);
+                });
+            }
+            catch (Exception ex)
+            {
+                isAIProcessing = false;
+                UpdateAIProcessingUI();
+                MessageBox.Show($"启动AI处理失败: {ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                Utils.Logger.Error("LabelManager", $"启动AI处理失败: {ex.Message}");
             }
         }
 

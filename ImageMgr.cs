@@ -2247,5 +2247,22 @@ namespace VPet.Plugin.LLMEP
                 return null;
             }
         }
+
+        /// <summary>
+        /// 创建并返回AI图片标签生成服务（用于设置窗口）
+        /// </summary>
+        public LLMImageTaggingService CreateAIImageTaggingService(LabelManager labelManager)
+        {
+            try
+            {
+                string pluginDir = LoaddllPath();
+                return new LLMImageTaggingService(this, labelManager, pluginDir);
+            }
+            catch (Exception ex)
+            {
+                Utils.Logger.Error("ImageMgr", $"创建AI图片标签生成服务失败: {ex.Message}");
+                return null;
+            }
+        }
     }
 }

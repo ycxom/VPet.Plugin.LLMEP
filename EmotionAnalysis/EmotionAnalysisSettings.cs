@@ -39,7 +39,12 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
         public string OllamaModel { get; set; } = "llama2";
 
         // Free设置（使用VPetLLM的Free配置）
-        public string FreeModel { get; set; } = "gpt-3.5-turbo";
+        public string FreeModel { get; set; } = "bymbym";
+
+        /// <summary>
+        /// 是否是支持视觉的模型（可读取图片）
+        /// </summary>
+        public bool IsVisionModel { get; set; } = false;
 
         // 性能设置
         public int MinRequestIntervalMs { get; set; } = 10000; // 10秒
@@ -67,6 +72,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 OllamaBaseUrl = this.OllamaBaseUrl,
                 OllamaModel = this.OllamaModel,
                 FreeModel = this.FreeModel,
+                IsVisionModel = this.IsVisionModel,
                 MinRequestIntervalMs = this.MinRequestIntervalMs,
                 CacheExpirationHours = this.CacheExpirationHours,
                 MaxCacheSize = this.MaxCacheSize,
@@ -94,6 +100,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                    OllamaBaseUrl == other.OllamaBaseUrl &&
                    OllamaModel == other.OllamaModel &&
                    FreeModel == other.FreeModel &&
+                   IsVisionModel == other.IsVisionModel &&
                    MinRequestIntervalMs == other.MinRequestIntervalMs &&
                    CacheExpirationHours == other.CacheExpirationHours &&
                    MaxCacheSize == other.MaxCacheSize &&

@@ -556,6 +556,100 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
         }
 
         /// <summary>
+        /// 发送视觉分析请求（支持图片）
+        /// </summary>
+        /// <param name="prompt">文本提示词</param>
+        /// <param name="base64Image">Base64编码的图片</param>
+        /// <returns>LLM响应内容</returns>
+        public async Task<string> SendVisionRequestAsync(string prompt, string base64Image)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_apiUrl) || string.IsNullOrEmpty(_apiKey))
+                {
+                    var errorMessage = "Free Chat 配置未加载，请等待配置下载完成后重启程序";
+                    _imageMgr?.LogError("FreeClient", errorMessage);
+                    throw new Exception(errorMessage);
+                }
+
+                var requestBody = new
+                {
+                    model = _model,
+                    messages = new[]
+                    {
+                        new
+                        {
+                            role = "user",
+                            content = new object[]
+                            {
+                                new { type = "text", text = prompt },
+                                new
+                                {
+                                    type = "image_url",
+                                    image_url = new
+                                    {
+                                        url = $"data:image/jpeg;base64,{base64Image}"
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    temperature = 0.3,
+                    max_tokens = 1000,
+                    stream = false
+                };
+
+                var json = JsonSerializer.Serialize(requestBody, new JsonSerializerOptions { WriteIndented = true });
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                // 记录HTTP请求信息
+                _imageMgr?.LogDebug("FreeClient", "=== Free Vision HTTP 请求开始 ===");
+                _imageMgr?.LogDebug("FreeClient", $"URL: {_apiUrl}");
+                _imageMgr?.LogDebug("FreeClient", $"Model: {_model}");
+                _imageMgr?.LogDebug("FreeClient", "=== Free Vision HTTP 请求结束 ===");
+
+                var response = await _httpClient.PostAsync(_apiUrl, content);
+                var responseJson = await response.Content.ReadAsStringAsync();
+
+                _imageMgr?.LogDebug("FreeClient", "=== Free Vision HTTP 响应开始 ===");
+                _imageMgr?.LogDebug("FreeClient", $"状态码: {response.StatusCode}");
+                _imageMgr?.LogDebug("FreeClient", $"响应体: {responseJson}");
+                _imageMgr?.LogDebug("FreeClient", "=== Free Vision HTTP 响应结束 ===");
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    if (responseJson.Contains("Failed to retrieve proxy group") ||
+                        responseJson.Contains("INTERNAL_SERVER_ERROR") ||
+                        response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    {
+                        _imageMgr?.LogError("FreeClient", $"Free API 服务器错误: {response.StatusCode} - {responseJson}");
+                        throw new Exception("Free API 服务暂时不可用，请稍后再试");
+                    }
+                    else
+                    {
+                        _imageMgr?.LogError("FreeClient", $"Free API 错误: {response.StatusCode} - {responseJson}");
+                        throw new Exception($"API调用失败: {response.StatusCode} - {responseJson}");
+                    }
+                }
+
+                var responseObj = JsonSerializer.Deserialize<JsonElement>(responseJson);
+                var messageContent = responseObj
+                    .GetProperty("choices")[0]
+                    .GetProperty("message")
+                    .GetProperty("content")
+                    .GetString();
+
+                return messageContent?.Trim() ?? "";
+            }
+            catch (Exception ex)
+            {
+                _imageMgr?.LogError("FreeClient", $"Vision request error: {ex.Message}");
+                _imageMgr?.LogDebug("FreeClient", $"StackTrace: {ex.StackTrace}");
+                throw;
+            }
+        }
+
+        /// <summary>
         /// 获取当前系统语言代码
         /// </summary>
         private string GetCurrentLanguageCode()

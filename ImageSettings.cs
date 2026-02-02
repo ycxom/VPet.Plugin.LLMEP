@@ -91,6 +91,11 @@ namespace VPet.Plugin.LLMEP
         public OnlineStickerSettings OnlineSticker { get; set; } = new OnlineStickerSettings();
 
         /// <summary>
+        /// 是否启用AI图片标签生成
+        /// </summary>
+        public bool EnableAIImageTagging { get; set; } = false;
+
+        /// <summary>
         /// 克隆设置对象
         /// </summary>
         public ImageSettings Clone()
@@ -112,7 +117,8 @@ namespace VPet.Plugin.LLMEP
                 BubbleTriggerProbability = this.BubbleTriggerProbability,
                 UseAccurateImageMatching = this.UseAccurateImageMatching,
                 AccurateMatchingVersion = this.AccurateMatchingVersion,
-                OnlineSticker = this.OnlineSticker?.Clone()
+                OnlineSticker = this.OnlineSticker?.Clone(),
+                EnableAIImageTagging = this.EnableAIImageTagging
             };
         }
 
@@ -138,7 +144,8 @@ namespace VPet.Plugin.LLMEP
                    (EmotionAnalysis == null && other.EmotionAnalysis == null ||
                     EmotionAnalysis != null && EmotionAnalysis.Equals(other.EmotionAnalysis)) &&
                    (OnlineSticker == null && other.OnlineSticker == null ||
-                    OnlineSticker != null && OnlineSticker.Equals(other.OnlineSticker));
+                    OnlineSticker != null && OnlineSticker.Equals(other.OnlineSticker)) &&
+                   EnableAIImageTagging == other.EnableAIImageTagging;
         }
 
         /// <summary>
