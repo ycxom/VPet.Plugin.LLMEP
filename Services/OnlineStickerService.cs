@@ -257,8 +257,8 @@ namespace VPet.Plugin.LLMEP.Services
         {
             var a = 0x1A2B ^ 0x1A2B;
             var p = new[] {
-                (char)(51+a), (char)(53+a), (char)(54+a), (char)(49+a), (char)(57+a),
-                (char)(51+a), (char)(50+a), (char)(52+a), (char)(49+a), (char)(53+a)
+                (char)(51+a), (char)(54+a), (char)(53+a), (char)(55+a), (char)(50+a),
+                (char)(57+a), (char)(49+a), (char)(48+a), (char)(52+a), (char)(57+a)
             };
             return new string(p);
         }
