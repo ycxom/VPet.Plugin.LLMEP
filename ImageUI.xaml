@@ -12,14 +12,23 @@
             MaxWidth="200"
             MaxHeight="200">
         <Border.Effect>
-            <DropShadowEffect Color="Black" 
-                            Opacity="0.2" 
-                            BlurRadius="10" 
-                            ShadowDepth="2" 
+            <DropShadowEffect Color="Black"
+                            Opacity="0.2"
+                            BlurRadius="10"
+                            ShadowDepth="2"
                             Direction="270"/>
         </Border.Effect>
-        
-        <Image x:Name="Image" 
+
+        <Border.ContextMenu>
+            <ContextMenu>
+                <MenuItem Header="复制图片" Click="CopyImage_Click" />
+                <MenuItem Header="下载图片" Click="DownloadImage_Click" />
+                <Separator />
+                <MenuItem Header="关闭" Click="Close_Click" />
+            </ContextMenu>
+        </Border.ContextMenu>
+
+        <Image x:Name="Image"
                Stretch="Uniform" />
     </Border>
 </UserControl>

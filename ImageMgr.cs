@@ -1080,12 +1080,12 @@ namespace VPet.Plugin.LLMEP
         /// <summary>
         /// 显示图片的内部实现（假设已经在 UI 线程中）
         /// </summary>
-        private void DisplayImageInternal(BitmapImage imageToShow, bool? forceIsGif = null)
+        private void DisplayImageInternal(BitmapImage imageToShow, bool? forceIsGif = null, byte[] imageData = null)
         {
             try
             {
                 LogDebug("ImageMgr", "开始显示表情包");
-                
+
                 // 只在有 UriSource 时才记录路径
                 if (imageToShow.UriSource != null)
                 {
@@ -1095,7 +1095,7 @@ namespace VPet.Plugin.LLMEP
                 {
                     LogDebug("ImageMgr", "图片来源: Base64/内存流");
                 }
-                
+
                 LogDebug("ImageMgr", $"图片尺寸: {imageToShow.PixelWidth}x{imageToShow.PixelHeight}");
 
                 image.Visibility = Visibility.Visible;
@@ -1103,7 +1103,14 @@ namespace VPet.Plugin.LLMEP
 
                 // 使用强制指定的isGif值，或者自动检测
                 bool isGif = forceIsGif ?? IsGifImage(imageToShow);
-                
+
+                // 设置图片数据用于复制功能
+                if (imageData != null && imageData.Length > 0)
+                {
+                    image.SetImageData(imageData, isGif);
+                    LogDebug("ImageMgr", $"已设置图片数据用于复制（{imageData.Length} 字节，类型: {(isGif ? "GIF" : "静态图片")}）");
+                }
+
                 if (isGif)
                 {
                     LogDebug("ImageMgr", "检测到GIF动画，使用动画显示模式");
@@ -2510,7 +2517,7 @@ namespace VPet.Plugin.LLMEP
                         LogDebug("ImageMgr", $"BitmapImage 创建成功，尺寸: {bitmapImage.PixelWidth}x{bitmapImage.PixelHeight}");
 
                         // 显示图片（已经在 UI 线程中，直接调用内部逻辑）
-                        DisplayImageInternal(bitmapImage, isGif);
+                        DisplayImageInternal(bitmapImage, isGif, imageBytes);
                     }
                     catch (Exception ex)
                     {
