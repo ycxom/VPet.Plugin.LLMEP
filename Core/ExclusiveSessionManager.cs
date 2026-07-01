@@ -32,7 +32,7 @@ namespace VPet.Plugin.LLMEP.Core
                 {
                     if (IsSessionTimedOut())
                     {
-                        Console.WriteLine($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 检测到超时会话 {_currentSessionId}，自动清理");
+                        Utils.Logger.Log($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 检测到超时会话 {_currentSessionId}，自动清理");
                         _currentSessionId = null;
                         _currentOwnerId = null;
                         _requestMap.Clear();
@@ -49,7 +49,7 @@ namespace VPet.Plugin.LLMEP.Core
                 _lastActivityTime = DateTime.Now;
                 _requestMap.Clear();
 
-                Console.WriteLine($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 启动会话 {_currentSessionId}，所有者: {callerId}");
+                Utils.Logger.Log($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 启动会话 {_currentSessionId}，所有者: {callerId}");
                 return _currentSessionId;
             }
         }
@@ -66,23 +66,23 @@ namespace VPet.Plugin.LLMEP.Core
             {
                 if (_currentSessionId == null)
                 {
-                    Console.WriteLine($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 没有活跃会话，无法结束");
+                    Utils.Logger.Log($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 没有活跃会话，无法结束");
                     return false;
                 }
 
                 if (_currentOwnerId != callerId)
                 {
-                    Console.WriteLine($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 调用者 {callerId} 不是会话所有者 {_currentOwnerId}");
+                    Utils.Logger.Log($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 调用者 {callerId} 不是会话所有者 {_currentOwnerId}");
                     return false;
                 }
 
                 if (_currentSessionId != sessionId)
                 {
-                    Console.WriteLine($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 会话 ID 不匹配，期望: {_currentSessionId}，实际: {sessionId}");
+                    Utils.Logger.Log($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 会话 ID 不匹配，期望: {_currentSessionId}，实际: {sessionId}");
                     return false;
                 }
 
-                Console.WriteLine($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 结束会话 {_currentSessionId}，清理 {_requestMap.Count} 个请求");
+                Utils.Logger.Log($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 结束会话 {_currentSessionId}，清理 {_requestMap.Count} 个请求");
                 _currentSessionId = null;
                 _currentOwnerId = null;
                 _requestMap.Clear();
@@ -157,7 +157,7 @@ namespace VPet.Plugin.LLMEP.Core
                 _requestMap[requestId] = requestInfo;
                 _lastActivityTime = DateTime.Now;
 
-                Console.WriteLine($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 注册请求 {requestId}，会话: {sessionId}，描述: {description}");
+                Utils.Logger.Log($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 注册请求 {requestId}，会话: {sessionId}，描述: {description}");
                 return requestId;
             }
         }
@@ -175,7 +175,7 @@ namespace VPet.Plugin.LLMEP.Core
                     requestInfo.CompletedTime = DateTime.Now;
                     _lastActivityTime = DateTime.Now;
 
-                    Console.WriteLine($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 标记请求 {requestId} 完成");
+                    Utils.Logger.Log($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 标记请求 {requestId} 完成");
                 }
             }
         }
@@ -218,7 +218,7 @@ namespace VPet.Plugin.LLMEP.Core
             {
                 if (_currentSessionId != null && IsSessionTimedOut())
                 {
-                    Console.WriteLine($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 会话 {_currentSessionId} 超时，自动清理");
+                    Utils.Logger.Log($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 会话 {_currentSessionId} 超时，自动清理");
                     _currentSessionId = null;
                     _currentOwnerId = null;
                     _requestMap.Clear();
@@ -235,7 +235,7 @@ namespace VPet.Plugin.LLMEP.Core
             lock (_lockObject)
             {
                 _bubbleCaptureEnabled = false;
-                Console.WriteLine($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 禁用气泡捕获");
+                Utils.Logger.Log($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 禁用气泡捕获");
             }
         }
 
@@ -247,7 +247,7 @@ namespace VPet.Plugin.LLMEP.Core
             lock (_lockObject)
             {
                 _bubbleCaptureEnabled = true;
-                Console.WriteLine($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 启用气泡捕获");
+                Utils.Logger.Log($"[ImagePlugin.ExclusiveSessionManager] {DateTime.Now:yyyy-MM-dd HH:mm:ss} 启用气泡捕获");
             }
         }
 

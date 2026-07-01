@@ -251,13 +251,13 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                     if (allLabels.Count > 0)
                     {
                         _emotionLabelsPrompt = $"\n\n可用的情感标签列表：{string.Join("、", allLabels)}\n\n请从上述标签中选择1-3个最相关的标签。";
-                        Console.WriteLine($"[EmotionAnalyzer] 已加载 {allLabels.Count} 个情感标签");
+                        Utils.Logger.Log($"[EmotionAnalyzer] 已加载 {allLabels.Count} 个情感标签");
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[EmotionAnalyzer] 加载情感标签失败: {ex.Message}");
+                Utils.Logger.Log($"[EmotionAnalyzer] 加载情感标签失败: {ex.Message}");
                 _emotionLabelsPrompt = "";
             }
         }
@@ -475,7 +475,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 if (timeSinceLastRequest.TotalMilliseconds < MIN_REQUEST_INTERVAL_MS)
                 {
                     Utils.Logger.Debug("EmotionAnalyzer", $"触发限流，距离上次请求 {timeSinceLastRequest.TotalMilliseconds}ms");
-                    Console.WriteLine($"[EmotionAnalyzer] Rate limited, using fallback");
+                    Utils.Logger.Log($"[EmotionAnalyzer] Rate limited, using fallback");
                     return GetFallbackEmotion();
                 }
 

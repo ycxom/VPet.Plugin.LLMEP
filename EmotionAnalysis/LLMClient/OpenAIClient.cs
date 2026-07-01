@@ -136,28 +136,28 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 // 确保URL格式正确，处理各种输入情况
                 string modelsUrl = BuildModelsUrl(_baseUrl);
 
-                Console.WriteLine($"[OpenAIClient] 获取模型列表");
-                Console.WriteLine($"[OpenAIClient] URL: {modelsUrl}");
-                Console.WriteLine($"[OpenAIClient] API Key: {(_apiKey?.Length > 0 ? $"***{_apiKey.Substring(Math.Max(0, _apiKey.Length - 4))}" : "未设置")}");
+                Utils.Logger.Log($"[OpenAIClient] 获取模型列表");
+                Utils.Logger.Log($"[OpenAIClient] URL: {modelsUrl}");
+                Utils.Logger.Log($"[OpenAIClient] API Key: {(_apiKey?.Length > 0 ? $"***{_apiKey.Substring(Math.Max(0, _apiKey.Length - 4))}" : "未设置")}");
 
                 var response = await _httpClient.GetAsync(modelsUrl);
 
                 // 读取响应内容
                 var responseContent = await response.Content.ReadAsStringAsync();
 
-                Console.WriteLine($"[OpenAIClient] 响应状态: {response.StatusCode}");
-                Console.WriteLine($"[OpenAIClient] 响应内容长度: {responseContent?.Length ?? 0}");
+                Utils.Logger.Log($"[OpenAIClient] 响应状态: {response.StatusCode}");
+                Utils.Logger.Log($"[OpenAIClient] 响应内容长度: {responseContent?.Length ?? 0}");
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    Console.WriteLine($"[OpenAIClient] 获取模型列表失败: {response.StatusCode}");
-                    Console.WriteLine($"[OpenAIClient] 错误响应: {responseContent}");
+                    Utils.Logger.Log($"[OpenAIClient] 获取模型列表失败: {response.StatusCode}");
+                    Utils.Logger.Log($"[OpenAIClient] 错误响应: {responseContent}");
                     throw new Exception($"API返回错误: {response.StatusCode} - {responseContent}");
                 }
 
                 // 打印部分响应内容用于调试
                 var previewLength = Math.Min(responseContent?.Length ?? 0, 500);
-                Console.WriteLine($"[OpenAIClient] 响应内容预览: {responseContent?.Substring(0, previewLength)}...");
+                Utils.Logger.Log($"[OpenAIClient] 响应内容预览: {responseContent?.Substring(0, previewLength)}...");
 
                 var responseObj = JsonSerializer.Deserialize<JsonElement>(responseContent);
 
@@ -194,28 +194,28 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 }
                 else
                 {
-                    Console.WriteLine($"[OpenAIClient] 警告: 无法识别的响应格式");
-                    Console.WriteLine($"[OpenAIClient] 响应类型: {responseObj.ValueKind}");
+                    Utils.Logger.Log($"[OpenAIClient] 警告: 无法识别的响应格式");
+                    Utils.Logger.Log($"[OpenAIClient] 响应类型: {responseObj.ValueKind}");
                 }
 
-                Console.WriteLine($"[OpenAIClient] 成功解析 {models.Count} 个模型");
+                Utils.Logger.Log($"[OpenAIClient] 成功解析 {models.Count} 个模型");
 
                 // 打印前5个模型用于调试
                 for (int i = 0; i < Math.Min(models.Count, 5); i++)
                 {
-                    Console.WriteLine($"[OpenAIClient] 模型 {i + 1}: {models[i].Id} ({models[i].Name})");
+                    Utils.Logger.Log($"[OpenAIClient] 模型 {i + 1}: {models[i].Id} ({models[i].Name})");
                 }
                 if (models.Count > 5)
                 {
-                    Console.WriteLine($"[OpenAIClient] ... 还有 {models.Count - 5} 个模型");
+                    Utils.Logger.Log($"[OpenAIClient] ... 还有 {models.Count - 5} 个模型");
                 }
 
                 return models;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[OpenAIClient] GetModels Error: {ex.Message}");
-                Console.WriteLine($"[OpenAIClient] StackTrace: {ex.StackTrace}");
+                Utils.Logger.Log($"[OpenAIClient] GetModels Error: {ex.Message}");
+                Utils.Logger.Log($"[OpenAIClient] StackTrace: {ex.StackTrace}");
                 throw;
             }
         }
@@ -241,7 +241,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
             // 调试：打印原始JSON元素
             if (models.Count < 3) // 只打印前几个避免日志过多
             {
-                Console.WriteLine($"[OpenAIClient] 解析模型元素: {modelElement}");
+                Utils.Logger.Log($"[OpenAIClient] 解析模型元素: {modelElement}");
             }
 
             // 尝试获取 id
@@ -250,7 +250,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 id = idProp.GetString();
                 if (models.Count < 3)
                 {
-                    Console.WriteLine($"[OpenAIClient] 找到 id 属性: {id}");
+                    Utils.Logger.Log($"[OpenAIClient] 找到 id 属性: {id}");
                 }
             }
             else if (modelElement.TryGetProperty("name", out var nameProp))
@@ -259,14 +259,14 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 id = nameProp.GetString();
                 if (models.Count < 3)
                 {
-                    Console.WriteLine($"[OpenAIClient] 找到 name 属性作为 id: {id}");
+                    Utils.Logger.Log($"[OpenAIClient] 找到 name 属性作为 id: {id}");
                 }
             }
             else
             {
                 if (models.Count < 3)
                 {
-                    Console.WriteLine($"[OpenAIClient] 警告: 未找到 id 或 name 属性");
+                    Utils.Logger.Log($"[OpenAIClient] 警告: 未找到 id 或 name 属性");
                 }
             }
 
@@ -298,7 +298,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
 
                 if (models.Count < 3)
                 {
-                    Console.WriteLine($"[OpenAIClient] 模型 {id}: IsChatModel={isChat}");
+                    Utils.Logger.Log($"[OpenAIClient] 模型 {id}: IsChatModel={isChat}");
                 }
                 if (IsChatModel(lowerId))
                 {
@@ -428,7 +428,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[OpenAI] Embedding error: {ex.Message}");
+                Utils.Logger.Log($"[OpenAI] Embedding error: {ex.Message}");
                 throw;
             }
         }

@@ -163,25 +163,25 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
             {
                 var url = $"{_baseUrl}/models?key={_apiKey}";
 
-                Console.WriteLine($"[GeminiClient] 获取模型列表");
-                Console.WriteLine($"[GeminiClient] URL: {_baseUrl}/models?key=***");
+                Utils.Logger.Log($"[GeminiClient] 获取模型列表");
+                Utils.Logger.Log($"[GeminiClient] URL: {_baseUrl}/models?key=***");
 
                 var response = await _httpClient.GetAsync(url);
                 var responseContent = await response.Content.ReadAsStringAsync();
 
-                Console.WriteLine($"[GeminiClient] 响应状态: {response.StatusCode}");
-                Console.WriteLine($"[GeminiClient] 响应内容长度: {responseContent?.Length ?? 0}");
+                Utils.Logger.Log($"[GeminiClient] 响应状态: {response.StatusCode}");
+                Utils.Logger.Log($"[GeminiClient] 响应内容长度: {responseContent?.Length ?? 0}");
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    Console.WriteLine($"[GeminiClient] 获取模型列表失败: {response.StatusCode}");
-                    Console.WriteLine($"[GeminiClient] 错误响应: {responseContent}");
+                    Utils.Logger.Log($"[GeminiClient] 获取模型列表失败: {response.StatusCode}");
+                    Utils.Logger.Log($"[GeminiClient] 错误响应: {responseContent}");
                     throw new Exception($"Gemini API error: {response.StatusCode} - {responseContent}");
                 }
 
                 // 打印部分响应内容用于调试
                 var previewLength = Math.Min(responseContent?.Length ?? 0, 500);
-                Console.WriteLine($"[GeminiClient] 响应内容预览: {responseContent?.Substring(0, previewLength)}...");
+                Utils.Logger.Log($"[GeminiClient] 响应内容预览: {responseContent?.Substring(0, previewLength)}...");
 
                 var models = new List<GeminiModelInfo>();
 
@@ -229,22 +229,22 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                     }
                 }
 
-                Console.WriteLine($"[GeminiClient] 成功解析 {models.Count} 个模型");
+                Utils.Logger.Log($"[GeminiClient] 成功解析 {models.Count} 个模型");
                 for (int i = 0; i < Math.Min(models.Count, 5); i++)
                 {
-                    Console.WriteLine($"[GeminiClient] 模型 {i + 1}: {models[i].Name}");
+                    Utils.Logger.Log($"[GeminiClient] 模型 {i + 1}: {models[i].Name}");
                 }
                 if (models.Count > 5)
                 {
-                    Console.WriteLine($"[GeminiClient] ... 还有 {models.Count - 5} 个模型");
+                    Utils.Logger.Log($"[GeminiClient] ... 还有 {models.Count - 5} 个模型");
                 }
 
                 return models;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[GeminiClient] GetModels Error: {ex.Message}");
-                Console.WriteLine($"[GeminiClient] StackTrace: {ex.StackTrace}");
+                Utils.Logger.Log($"[GeminiClient] GetModels Error: {ex.Message}");
+                Utils.Logger.Log($"[GeminiClient] StackTrace: {ex.StackTrace}");
                 throw;
             }
         }
@@ -284,7 +284,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    Console.WriteLine($"[GeminiClient] Embedding API Error: {response.StatusCode} - {responseContent}");
+                    Utils.Logger.Log($"[GeminiClient] Embedding API Error: {response.StatusCode} - {responseContent}");
                     throw new Exception($"Gemini Embedding API error: {response.StatusCode}");
                 }
 
@@ -310,7 +310,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[GeminiClient] Embedding Error: {ex.Message}");
+                Utils.Logger.Log($"[GeminiClient] Embedding Error: {ex.Message}");
                 throw;
             }
         }

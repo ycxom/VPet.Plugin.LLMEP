@@ -78,6 +78,17 @@ namespace VPet.Plugin.LLMEP.Utils
         }
 
         /// <summary>
+        /// 记录一条日志（信息级别）。
+        /// 用于兼容以往直接调用 Console.WriteLine 的场景：所有输出仅保留在插件自身日志中，
+        /// 不会写入 Console，从而避免日志被 VPet 主程序捕获并释放到 VPet 日志。
+        /// 消息通常已自带 "[分类]" 前缀，因此统一归入 General 分类。
+        /// </summary>
+        public static void Log(string message)
+        {
+            Log(LogLevel.Info, "General", message);
+        }
+
+        /// <summary>
         /// 记录日志
         /// </summary>
         private static void Log(LogLevel level, string category, string message)

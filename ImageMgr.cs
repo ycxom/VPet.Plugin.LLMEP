@@ -225,7 +225,7 @@ namespace VPet.Plugin.LLMEP
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[VPet表情包] 设置加载失败，使用默认设置: {ex.Message}");
+                Utils.Logger.Log($"[VPet表情包] 设置加载失败，使用默认设置: {ex.Message}");
                 settings = new ImageSettings();
                 previousSettings = settings.Clone();
             }
@@ -523,9 +523,6 @@ namespace VPet.Plugin.LLMEP
             // 保持旧的日志收集（向后兼容）
             var timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
             var logMessage = $"[{timestamp}] {message}";
-
-            // 输出到控制台
-            Console.WriteLine($"[VPet LLM表情包] {logMessage}");
 
             // 添加到日志列表
             lock (logMessages)

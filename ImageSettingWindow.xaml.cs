@@ -95,11 +95,25 @@ namespace VPet.Plugin.LLMEP
 
                 if (logs.Count > 0)
                 {
-                    // 更新日志显示
-                    TextBoxLog.Text = string.Join(Environment.NewLine, logs);
+                    var newText = string.Join(Environment.NewLine, logs);
 
-                    // 自动滚动到底部
-                    LogScrollViewer?.ScrollToEnd();
+                    // 仅在内容变化时刷新，避免打断用户的选择/滚动
+                    if (TextBoxLog.Text != newText)
+                    {
+                        // 更新前记录用户是否已停留在底部（留 1px 容差）。
+                        // 若用户上拉查看历史日志，则不强制滚动到底部。
+                        bool wasAtBottom = LogScrollViewer == null
+                            || LogScrollViewer.ScrollableHeight <= 0
+                            || LogScrollViewer.VerticalOffset >= LogScrollViewer.ScrollableHeight - 1;
+
+                        TextBoxLog.Text = newText;
+
+                        // 仅当之前停留在底部时才自动滚动到底部
+                        if (wasAtBottom)
+                        {
+                            LogScrollViewer?.ScrollToEnd();
+                        }
+                    }
                 }
                 else
                 {

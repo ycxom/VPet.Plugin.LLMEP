@@ -194,7 +194,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
             else
             {
                 // 否则使用控制台输出
-                Console.WriteLine($"[SpeechCapturer] {DateTime.Now:yyyy-MM-dd HH:mm:ss} {message}");
+                Utils.Logger.Log($"[SpeechCapturer] {DateTime.Now:yyyy-MM-dd HH:mm:ss} {message}");
             }
         }
     }

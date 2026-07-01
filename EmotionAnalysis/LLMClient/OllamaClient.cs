@@ -152,25 +152,25 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
             {
                 var url = $"{_baseUrl}/api/tags";
 
-                Console.WriteLine($"[OllamaClient] 获取模型列表");
-                Console.WriteLine($"[OllamaClient] URL: {url}");
+                Utils.Logger.Log($"[OllamaClient] 获取模型列表");
+                Utils.Logger.Log($"[OllamaClient] URL: {url}");
 
                 var response = await _httpClient.GetAsync(url);
                 var responseContent = await response.Content.ReadAsStringAsync();
 
-                Console.WriteLine($"[OllamaClient] 响应状态: {response.StatusCode}");
-                Console.WriteLine($"[OllamaClient] 响应内容长度: {responseContent?.Length ?? 0}");
+                Utils.Logger.Log($"[OllamaClient] 响应状态: {response.StatusCode}");
+                Utils.Logger.Log($"[OllamaClient] 响应内容长度: {responseContent?.Length ?? 0}");
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    Console.WriteLine($"[OllamaClient] 获取模型列表失败: {response.StatusCode}");
-                    Console.WriteLine($"[OllamaClient] 错误响应: {responseContent}");
+                    Utils.Logger.Log($"[OllamaClient] 获取模型列表失败: {response.StatusCode}");
+                    Utils.Logger.Log($"[OllamaClient] 错误响应: {responseContent}");
                     throw new Exception($"Ollama API error: {response.StatusCode} - {responseContent}");
                 }
 
                 // 打印部分响应内容用于调试
                 var previewLength = Math.Min(responseContent?.Length ?? 0, 500);
-                Console.WriteLine($"[OllamaClient] 响应内容预览: {responseContent?.Substring(0, previewLength)}...");
+                Utils.Logger.Log($"[OllamaClient] 响应内容预览: {responseContent?.Substring(0, previewLength)}...");
 
                 var models = new List<OllamaModelInfo>();
 
@@ -247,22 +247,22 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                     }
                 }
 
-                Console.WriteLine($"[OllamaClient] 成功解析 {models.Count} 个模型");
+                Utils.Logger.Log($"[OllamaClient] 成功解析 {models.Count} 个模型");
                 for (int i = 0; i < Math.Min(models.Count, 5); i++)
                 {
-                    Console.WriteLine($"[OllamaClient] 模型 {i + 1}: {models[i].Name} ({models[i].Size})");
+                    Utils.Logger.Log($"[OllamaClient] 模型 {i + 1}: {models[i].Name} ({models[i].Size})");
                 }
                 if (models.Count > 5)
                 {
-                    Console.WriteLine($"[OllamaClient] ... 还有 {models.Count - 5} 个模型");
+                    Utils.Logger.Log($"[OllamaClient] ... 还有 {models.Count - 5} 个模型");
                 }
 
                 return models;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[OllamaClient] GetModels Error: {ex.Message}");
-                Console.WriteLine($"[OllamaClient] StackTrace: {ex.StackTrace}");
+                Utils.Logger.Log($"[OllamaClient] GetModels Error: {ex.Message}");
+                Utils.Logger.Log($"[OllamaClient] StackTrace: {ex.StackTrace}");
                 throw;
             }
         }
@@ -308,7 +308,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    Console.WriteLine($"[OllamaClient] Embedding API Error: {response.StatusCode} - {responseContent}");
+                    Utils.Logger.Log($"[OllamaClient] Embedding API Error: {response.StatusCode} - {responseContent}");
                     throw new Exception($"Ollama Embedding API error: {response.StatusCode}");
                 }
 
@@ -331,7 +331,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[OllamaClient] Embedding Error: {ex.Message}");
+                Utils.Logger.Log($"[OllamaClient] Embedding Error: {ex.Message}");
                 throw;
             }
         }

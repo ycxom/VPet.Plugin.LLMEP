@@ -164,7 +164,7 @@ namespace VPet.Plugin.LLMEP
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[VPet表情包] 加载设置失败: {ex.Message}");
+                Utils.Logger.Log($"[VPet表情包] 加载设置失败: {ex.Message}");
             }
 
             return new ImageSettings();
@@ -194,7 +194,7 @@ namespace VPet.Plugin.LLMEP
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[VPet表情包] 保存设置失败: {ex.Message}");
+                Utils.Logger.Log($"[VPet表情包] 保存设置失败: {ex.Message}");
                 throw;
             }
         }

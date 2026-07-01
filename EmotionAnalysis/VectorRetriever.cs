@@ -45,7 +45,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
             {
                 if (!File.Exists(labelFilePath))
                 {
-                    Console.WriteLine($"[VectorRetriever] Label file not found: {labelFilePath}");
+                    Utils.Logger.Log($"[VectorRetriever] Label file not found: {labelFilePath}");
                     return;
                 }
 
@@ -55,7 +55,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
 
                 if (labelData?.images == null)
                 {
-                    Console.WriteLine($"[VectorRetriever] Invalid JSON format in {labelFilePath}");
+                    Utils.Logger.Log($"[VectorRetriever] Invalid JSON format in {labelFilePath}");
                     return;
                 }
 
@@ -78,14 +78,14 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                     }
                 }
 
-                Console.WriteLine($"[VectorRetriever] Loaded {loadedCount} labeled images from {labelFilePath}");
+                Utils.Logger.Log($"[VectorRetriever] Loaded {loadedCount} labeled images from {labelFilePath}");
 
                 // 预计算所有标签的向量嵌入
                 _ = PrecomputeLabelEmbeddingsAsync();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[VectorRetriever] Error loading labels: {ex.Message}");
+                Utils.Logger.Log($"[VectorRetriever] Error loading labels: {ex.Message}");
             }
         }
 
@@ -101,7 +101,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                     .Distinct()
                     .ToList();
 
-                Console.WriteLine($"[VectorRetriever] Precomputing embeddings for {allLabels.Count} unique labels...");
+                Utils.Logger.Log($"[VectorRetriever] Precomputing embeddings for {allLabels.Count} unique labels...");
 
                 foreach (var label in allLabels)
                 {
@@ -114,16 +114,16 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"[VectorRetriever] Failed to compute embedding for '{label}': {ex.Message}");
+                            Utils.Logger.Log($"[VectorRetriever] Failed to compute embedding for '{label}': {ex.Message}");
                         }
                     }
                 }
 
-                Console.WriteLine($"[VectorRetriever] Precomputed {_labelEmbeddings.Count} label embeddings");
+                Utils.Logger.Log($"[VectorRetriever] Precomputed {_labelEmbeddings.Count} label embeddings");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[VectorRetriever] Error precomputing embeddings: {ex.Message}");
+                Utils.Logger.Log($"[VectorRetriever] Error precomputing embeddings: {ex.Message}");
             }
         }
 
@@ -134,7 +134,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 // 如果没有标签，返回空列表（将使用随机选择）
                 if (_imageLabels.Count == 0)
                 {
-                    Console.WriteLine("[VectorRetriever] No labels loaded, falling back to random selection");
+                    Utils.Logger.Log("[VectorRetriever] No labels loaded, falling back to random selection");
                     return new List<string>();
                 }
 
@@ -149,7 +149,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[VectorRetriever] Failed to get embedding for '{emotion}': {ex.Message}");
+                        Utils.Logger.Log($"[VectorRetriever] Failed to get embedding for '{emotion}': {ex.Message}");
                     }
                 }
 
@@ -191,12 +191,12 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                     .Select(kvp => kvp.Key)
                     .ToList();
 
-                Console.WriteLine($"[VectorRetriever] Found {topImages.Count} matching images for emotions: {string.Join(", ", emotions)}");
+                Utils.Logger.Log($"[VectorRetriever] Found {topImages.Count} matching images for emotions: {string.Join(", ", emotions)}");
                 return topImages;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[VectorRetriever] Error finding matches: {ex.Message}");
+                Utils.Logger.Log($"[VectorRetriever] Error finding matches: {ex.Message}");
                 return new List<string>();
             }
         }

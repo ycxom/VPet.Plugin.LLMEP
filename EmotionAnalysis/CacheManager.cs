@@ -81,14 +81,14 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                             }
                         }
 
-                        Console.WriteLine($"[Cache] Loaded {validEntries} valid entries, removed {expiredEntries} expired entries");
+                        Utils.Logger.Log($"[Cache] Loaded {validEntries} valid entries, removed {expiredEntries} expired entries");
                         Utils.Logger.Info("CacheManager", $"加载了 {validEntries} 个有效缓存条目，移除了 {expiredEntries} 个过期条目");
                     }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Cache] Load error: {ex.Message}");
+                Utils.Logger.Log($"[Cache] Load error: {ex.Message}");
                 Utils.Logger.Warning("CacheManager", $"加载缓存失败: {ex.Message}");
                 // 如果加载失败，从空缓存开始
             }
@@ -193,12 +193,12 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 _lastSaveTime = DateTime.Now;
 
                 var removedCount = validEntries.Count - topEntries.Count;
-                Console.WriteLine($"[Cache] Saved {topEntries.Count} entries, removed {removedCount} low-priority entries");
+                Utils.Logger.Log($"[Cache] Saved {topEntries.Count} entries, removed {removedCount} low-priority entries");
                 Utils.Logger.Info("CacheManager", $"保存了 {topEntries.Count} 个缓存条目，移除了 {removedCount} 个低优先级条目");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Cache] Save error: {ex.Message}");
+                Utils.Logger.Log($"[Cache] Save error: {ex.Message}");
                 Utils.Logger.Error("CacheManager", $"保存缓存失败: {ex.Message}");
             }
         }
@@ -220,7 +220,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                     _memoryCache.Remove(hash);
                     _persistentCache.Remove(hash);
                     emotions = null;
-                    Console.WriteLine($"[Cache] Expired entry removed: {text}");
+                    Utils.Logger.Log($"[Cache] Expired entry removed: {text}");
                     Utils.Logger.Debug("CacheManager", $"移除过期缓存条目: {text}");
                     return false;
                 }
@@ -228,7 +228,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 entry.HitCount++;
                 entry.LastUsed = now;
                 emotions = entry.Emotions;
-                Console.WriteLine($"[Cache] Memory hit: {text} -> {string.Join(", ", emotions)}");
+                Utils.Logger.Log($"[Cache] Memory hit: {text} -> {string.Join(", ", emotions)}");
                 Utils.Logger.Debug("CacheManager", $"内存缓存命中: {text} -> [{string.Join(", ", emotions)}]");
                 return true;
             }
@@ -241,7 +241,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 {
                     _persistentCache.Remove(hash);
                     emotions = null;
-                    Console.WriteLine($"[Cache] Expired entry removed: {text}");
+                    Utils.Logger.Log($"[Cache] Expired entry removed: {text}");
                     Utils.Logger.Debug("CacheManager", $"移除过期缓存条目: {text}");
                     return false;
                 }
@@ -253,7 +253,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 // 提升到内存缓存
                 AddToMemoryCache(hash, entry);
 
-                Console.WriteLine($"[Cache] Persistent hit: {text} -> {string.Join(", ", emotions)}");
+                Utils.Logger.Log($"[Cache] Persistent hit: {text} -> {string.Join(", ", emotions)}");
                 Utils.Logger.Debug("CacheManager", $"持久化缓存命中: {text} -> [{string.Join(", ", emotions)}]");
                 return true;
             }
@@ -285,7 +285,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
             // 添加到持久化缓存
             _persistentCache[hash] = entry;
 
-            Console.WriteLine($"[Cache] Cached: {text} -> {string.Join(", ", emotions)}");
+            Utils.Logger.Log($"[Cache] Cached: {text} -> {string.Join(", ", emotions)}");
             Utils.Logger.Info("CacheManager", $"缓存新结果: {text} -> [{string.Join(", ", emotions)}]");
 
             // 立即保存缓存以确保数据持久化
