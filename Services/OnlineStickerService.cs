@@ -62,8 +62,10 @@ namespace VPet.Plugin.LLMEP.Services
 
         /// <summary>
         /// 搜索表情包
+        /// 不请求 Base64 数据，避免服务端把图片内联进搜索响应造成额外带宽消耗；
+        /// 命中结果后按 <see cref="GetImageAsync"/> 用 id 单独获取原始二进制数据
         /// </summary>
-        public async Task<SearchResponse?> SearchAsync(string query, int limit = 1, double minScore = 0.2)
+        public async Task<SearchResponse?> SearchAsync(string query, int limit = 1, double minScore = 0.2, bool includeBase64 = false)
         {
             try
             {
@@ -72,7 +74,7 @@ namespace VPet.Plugin.LLMEP.Services
                     Query = query,
                     Limit = limit,
                     MinScore = minScore,
-                    IncludeBase64 = true,
+                    IncludeBase64 = includeBase64,
                     Random = true
                 };
 
@@ -182,6 +184,75 @@ namespace VPet.Plugin.LLMEP.Services
             }
         }
 
+        /// <summary>
+        /// 按 id（或 filename）获取单张图片的原始二进制数据
+        /// 相比 includeBase64 内联返回，省去了 Base64 编码带来的约 33% 体积膨胀，
+        /// 且只在真正需要展示时才按需下载
+        /// </summary>
+        public async Task<(byte[]? Bytes, string? ContentType)> GetImageAsync(string id)
+        {
+            try
+            {
+                var url = _baseUrl + "/api/image";
+                var json = JsonConvert.SerializeObject(new { id });
+
+                using var requestMessage = new HttpRequestMessage(HttpMethod.Post, url);
+                requestMessage.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                await AddCredentialHeadersAsync(requestMessage);
+
+                var response = await _httpClient.SendAsync(requestMessage);
+                if (!response.IsSuccessStatusCode)
+                {
+                    LastError = $"HTTP {(int)response.StatusCode}";
+                    Logger.Error("OnlineStickerService", $"获取图片失败: {LastError}, id: {id}");
+                    return (null, null);
+                }
+
+                var bytes = await response.Content.ReadAsByteArrayAsync();
+                var contentType = response.Content.Headers.ContentType?.MediaType;
+                return (bytes, contentType);
+            }
+            catch (TaskCanceledException)
+            {
+                LastError = "请求超时";
+                Logger.Error("OnlineStickerService", "获取图片超时");
+                return (null, null);
+            }
+            catch (Exception ex)
+            {
+                LastError = ex.Message;
+                Logger.Error("OnlineStickerService", $"获取图片异常: {ex.Message}");
+                return (null, null);
+            }
+        }
+
+        private async Task AddCredentialHeadersAsync(HttpRequestMessage requestMessage)
+        {
+            if (!_useBuiltInCredentials)
+            {
+                return;
+            }
+
+            var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            int ck = 0;
+            if (_getAuthKey != null)
+            {
+                try
+                {
+                    ck = await _getAuthKey();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Warning("OnlineStickerService", $"获取认证密钥失败: {ex.Message}");
+                }
+            }
+
+            requestMessage.Headers.Add("X-Cache-Token", EncryptData(_steamId.ToString(), ts));
+            requestMessage.Headers.Add("X-Request-Signature", EncryptData(GetMagicNumber(), ts));
+            requestMessage.Headers.Add("X-Check-Key", EncryptData(ck.ToString(), ts));
+            requestMessage.Headers.Add("X-Trace-Id", GenerateTraceId(ts));
+        }
+
         private async Task<TResponse?> PostAsync<TRequest, TResponse>(string endpoint, TRequest request)
             where TResponse : class
         {
@@ -192,29 +263,7 @@ namespace VPet.Plugin.LLMEP.Services
 
                 using var requestMessage = new HttpRequestMessage(HttpMethod.Post, url);
                 requestMessage.Content = new StringContent(json, Encoding.UTF8, "application/json");
-
-                // 添加内置凭证头（如果启用）
-                if (_useBuiltInCredentials)
-                {
-                    var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                    int ck = 0;
-                    if (_getAuthKey != null)
-                    {
-                        try
-                        {
-                            ck = await _getAuthKey();
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.Warning("OnlineStickerService", $"获取认证密钥失败: {ex.Message}");
-                        }
-                    }
-
-                    requestMessage.Headers.Add("X-Cache-Token", EncryptData(_steamId.ToString(), ts));
-                    requestMessage.Headers.Add("X-Request-Signature", EncryptData(GetMagicNumber(), ts));
-                    requestMessage.Headers.Add("X-Check-Key", EncryptData(ck.ToString(), ts));
-                    requestMessage.Headers.Add("X-Trace-Id", GenerateTraceId(ts));
-                }
+                await AddCredentialHeadersAsync(requestMessage);
 
                 var response = await _httpClient.SendAsync(requestMessage);
                 var responseJson = await response.Content.ReadAsStringAsync();
@@ -351,7 +400,7 @@ namespace VPet.Plugin.LLMEP.Services
         public double MinScore { get; set; } = 0.2;
 
         [JsonProperty("includeBase64")]
-        public bool IncludeBase64 { get; set; } = true;
+        public bool IncludeBase64 { get; set; } = false;
 
         [JsonProperty("random")]
         public bool Random { get; set; } = true;
@@ -371,6 +420,9 @@ namespace VPet.Plugin.LLMEP.Services
 
     public class SearchResult
     {
+        [JsonProperty("id")]
+        public string? Id { get; set; }
+
         [JsonProperty("filename")]
         public string Filename { get; set; } = string.Empty;
 
