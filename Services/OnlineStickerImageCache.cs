@@ -25,10 +25,11 @@ namespace VPet.Plugin.LLMEP.Services
 
     /// <summary>
     /// 在线表情包磁盘缓存。
-    /// 所有缓存图片和标签索引打包进一个 zip，再整体 AES 加密并在最前面注入自定义魔术头，
-    /// 落成系统 Temp 目录下的单一文件：既不在 Temp 里留一堆可以直接双击打开、逐张扒走的原始图片，
-    /// 也防止把扩展名改成 .zip 后被解压工具直接识别打开，降低服务端图库被顺手整体搬走的风险。
-    /// 命中同一张图时直接从内存里返回，不必再次向服务端请求（无论是二进制还是 Base64）。
+    /// 每张图片单独打包成一个 zip entry 再 AES 加密，落成 Temp 目录下互不关联的 &lt;id&gt;.vpc 文件；
+    /// 标签索引单独加密成一个很小的 index.dat。所有文件都以自定义魔术头开头——双击打不开，
+    /// 改后缀当 zip 解压也读不出东西，降低服务端图库被顺手整体搬走的风险。
+    /// 内存里只常驻标签索引（几十 KB 量级）和一个有限大小的最近使用图片 LRU，
+    /// 图片字节按需从磁盘解密读取，不会把几百张图全部常驻内存。
     /// </summary>
     public class OnlineStickerImageCache
     {
@@ -36,38 +37,52 @@ namespace VPet.Plugin.LLMEP.Services
         private static readonly byte[] MagicHeader = Encoding.ASCII.GetBytes("VPLLMSC1"); // VPetLLM Sticker Cache v1
         private static readonly byte[] EncryptionKey = DeriveKey("VPetLLM-OnlineStickerCache-DoNotRedistribute-v1");
 
-        private readonly string _archivePath;
-        private readonly object _lock = new();
-        private readonly Dictionary<string, byte[]> _imageBytesById = new();
-        private readonly Dictionary<string, CacheIndexEntry> _index = new();
-        private readonly Random _random = new();
-
         private const int CacheExpirationDays = 7;
         private const int MaxCachedFiles = 500;
+        private const int MaxMemoryCachedImages = 30; // 内存 LRU 上限张数，避免几百张图全部常驻内存
+
+        private readonly string _cacheDir;
+        private readonly string _indexPath;
+        private readonly object _lock = new();
+        private readonly Dictionary<string, CacheIndexEntry> _index = new();
+
+        // 简单 LRU：最近访问过的解密图片字节，超过上限淘汰最久未用的一张
+        private readonly LinkedList<string> _lruOrder = new();
+        private readonly Dictionary<string, LinkedListNode<string>> _lruNodes = new();
+        private readonly Dictionary<string, byte[]> _lruBytes = new();
+
+        private readonly Random _random = new();
 
         public OnlineStickerImageCache()
         {
-            var cacheDir = Path.Combine(Path.GetTempPath(), "VPetLLM_OnlineStickerCache");
-            Directory.CreateDirectory(cacheDir);
-            _archivePath = Path.Combine(cacheDir, "sticker.cache");
-
-            Load();
+            _cacheDir = Path.Combine(Path.GetTempPath(), "VPetLLM_OnlineStickerCache");
+            Directory.CreateDirectory(_cacheDir);
+            _indexPath = Path.Combine(_cacheDir, "index.dat");
+            LoadIndex();
         }
 
         public bool TryGet(string id, out byte[] bytes)
         {
             lock (_lock)
             {
-                if (_imageBytesById.TryGetValue(id, out var cached))
+                if (TouchLru(id, out var cached))
                 {
                     bytes = cached;
-                    if (_index.TryGetValue(id, out var entry))
-                    {
-                        entry.LastAccessedAt = DateTime.UtcNow;
-                    }
-                    Logger.Debug("OnlineStickerImageCache", $"缓存命中: {id}");
+                    BumpAccess(id);
                     return true;
                 }
+            }
+
+            if (LoadImageFromDisk(id, out var loaded))
+            {
+                lock (_lock)
+                {
+                    InsertLru(id, loaded);
+                    BumpAccess(id);
+                }
+                bytes = loaded;
+                Logger.Debug("OnlineStickerImageCache", $"缓存命中: {id}");
+                return true;
             }
 
             bytes = Array.Empty<byte>();
@@ -76,12 +91,13 @@ namespace VPet.Plugin.LLMEP.Services
 
         public void Save(string id, byte[] bytes, string? contentType, IEnumerable<string>? tags = null)
         {
-            lock (_lock)
+            try
             {
-                try
+                var ext = ExtensionFromContentType(contentType, bytes);
+                SaveImageToDisk(id, bytes, ext);
+
+                lock (_lock)
                 {
-                    var ext = ExtensionFromContentType(contentType, bytes);
-                    _imageBytesById[id] = bytes;
                     _index[id] = new CacheIndexEntry
                     {
                         Id = id,
@@ -90,22 +106,22 @@ namespace VPet.Plugin.LLMEP.Services
                         CachedAt = DateTime.UtcNow,
                         LastAccessedAt = DateTime.UtcNow
                     };
-
-                    Logger.Debug("OnlineStickerImageCache", $"已缓存: {id} ({bytes.Length} 字节)");
-
+                    InsertLru(id, bytes);
                     CleanupIfNeeded();
-                    Persist();
+                    PersistIndex();
                 }
-                catch (Exception ex)
-                {
-                    Logger.Warning("OnlineStickerImageCache", $"写入缓存失败: {ex.Message}");
-                }
+
+                Logger.Debug("OnlineStickerImageCache", $"已缓存: {id} ({bytes.Length} 字节)");
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning("OnlineStickerImageCache", $"写入缓存失败: {ex.Message}");
             }
         }
 
         /// <summary>
         /// 在本地缓存里按标签做离线检索（网络不可用时的兜底）：
-        /// 统计每个候选与查询标签的重合数，取重合最多的一批中随机挑一个
+        /// 统计每个候选与查询标签的重合数，取重合最多的一批中随机挑一个，再按需从磁盘读取
         /// </summary>
         public bool TryFindOffline(IEnumerable<string> queryTags, out string? id, out byte[]? bytes)
         {
@@ -122,6 +138,7 @@ namespace VPet.Plugin.LLMEP.Services
                 return false;
             }
 
+            string pickedId;
             lock (_lock)
             {
                 var scored = _index.Values
@@ -140,21 +157,24 @@ namespace VPet.Plugin.LLMEP.Services
 
                 var maxScore = scored.Max(x => x.Score);
                 var best = scored.Where(x => x.Score == maxScore).ToList();
-                var picked = best[_random.Next(best.Count)].Entry;
-
-                if (!_imageBytesById.TryGetValue(picked.Id, out var cachedBytes))
-                {
-                    // 索引里有记录但图片数据已被清理，顺手把陈旧索引项去掉
-                    _index.Remove(picked.Id);
-                    return false;
-                }
-
-                picked.LastAccessedAt = DateTime.UtcNow;
-                id = picked.Id;
-                bytes = cachedBytes;
-                Logger.Debug("OnlineStickerImageCache", $"离线缓存命中: {picked.Id}, 匹配标签数: {maxScore}");
-                return true;
+                pickedId = best[_random.Next(best.Count)].Entry.Id;
             }
+
+            if (!TryGet(pickedId, out var pickedBytes))
+            {
+                // 索引里有记录但磁盘文件已经不在了，顺手把陈旧索引项去掉
+                lock (_lock)
+                {
+                    _index.Remove(pickedId);
+                    PersistIndex();
+                }
+                return false;
+            }
+
+            id = pickedId;
+            bytes = pickedBytes;
+            Logger.Debug("OnlineStickerImageCache", $"离线缓存命中: {pickedId}");
+            return true;
         }
 
         /// <summary>
@@ -172,123 +192,200 @@ namespace VPet.Plugin.LLMEP.Services
             }
         }
 
-        /// <summary>
-        /// 读取并解密缓存归档：校验魔术头 -> AES 解密 -> 解压 zip -> 载入索引与图片数据
-        /// </summary>
-        private void Load()
+        // ---------- 内存 LRU（调用方需持有 _lock） ----------
+
+        private bool TouchLru(string id, out byte[] bytes)
+        {
+            if (_lruBytes.TryGetValue(id, out var cached))
+            {
+                var node = _lruNodes[id];
+                _lruOrder.Remove(node);
+                _lruOrder.AddFirst(node);
+                bytes = cached;
+                return true;
+            }
+            bytes = Array.Empty<byte>();
+            return false;
+        }
+
+        private void InsertLru(string id, byte[] bytes)
+        {
+            if (_lruNodes.TryGetValue(id, out var existing))
+            {
+                _lruOrder.Remove(existing);
+            }
+
+            var node = new LinkedListNode<string>(id);
+            _lruOrder.AddFirst(node);
+            _lruNodes[id] = node;
+            _lruBytes[id] = bytes;
+
+            while (_lruOrder.Count > MaxMemoryCachedImages)
+            {
+                var last = _lruOrder.Last!;
+                _lruOrder.RemoveLast();
+                _lruNodes.Remove(last.Value);
+                _lruBytes.Remove(last.Value);
+            }
+        }
+
+        private void BumpAccess(string id)
+        {
+            if (_index.TryGetValue(id, out var entry))
+            {
+                entry.LastAccessedAt = DateTime.UtcNow;
+            }
+        }
+
+        // ---------- 磁盘读写：每张图片独立一个加密文件，按需解密，不整体常驻内存 ----------
+
+        private string GetImagePath(string id) => Path.Combine(_cacheDir, id + ".vpc");
+
+        private void SaveImageToDisk(string id, byte[] imageBytes, string ext)
+        {
+            using var zipStream = new MemoryStream();
+            using (var zip = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: true))
+            {
+                var entry = zip.CreateEntry("data" + ext, CompressionLevel.Fastest);
+                using var entryStream = entry.Open();
+                entryStream.Write(imageBytes, 0, imageBytes.Length);
+            }
+
+            var iv = RandomNumberGenerator.GetBytes(16);
+            var encrypted = Encrypt(zipStream.ToArray(), iv);
+            File.WriteAllBytes(GetImagePath(id), WrapEnvelope(iv, encrypted));
+        }
+
+        private bool LoadImageFromDisk(string id, out byte[] bytes)
+        {
+            bytes = Array.Empty<byte>();
+            var path = GetImagePath(id);
+
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    return false;
+                }
+
+                var raw = File.ReadAllBytes(path);
+                if (!TryUnwrapEnvelope(raw, out var iv, out var cipherText))
+                {
+                    return false;
+                }
+
+                var zipBytes = Decrypt(cipherText, iv);
+                using var ms = new MemoryStream(zipBytes);
+                using var zip = new ZipArchive(ms, ZipArchiveMode.Read);
+                var entry = zip.Entries.FirstOrDefault();
+                if (entry == null)
+                {
+                    return false;
+                }
+
+                using var entryStream = entry.Open();
+                using var buffer = new MemoryStream();
+                entryStream.CopyTo(buffer);
+                bytes = buffer.ToArray();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning("OnlineStickerImageCache", $"读取缓存图片失败: {id}, {ex.Message}");
+                return false;
+            }
+        }
+
+        // ---------- 标签索引：单独一个很小的加密文件，全程常驻内存 ----------
+
+        private void LoadIndex()
         {
             try
             {
-                if (!File.Exists(_archivePath))
+                if (!File.Exists(_indexPath))
                 {
                     return;
                 }
 
-                var raw = File.ReadAllBytes(_archivePath);
-                if (raw.Length <= MagicHeaderLength + 16)
+                var raw = File.ReadAllBytes(_indexPath);
+                if (!TryUnwrapEnvelope(raw, out var iv, out var cipherText))
                 {
-                    return; // 太短，视为损坏或空缓存
+                    Logger.Warning("OnlineStickerImageCache", "缓存索引文件头不匹配，忽略旧索引");
+                    return;
                 }
 
-                for (var i = 0; i < MagicHeaderLength; i++)
+                var json = Encoding.UTF8.GetString(Decrypt(cipherText, iv));
+                var entries = JsonSerializer.Deserialize<List<CacheIndexEntry>>(json);
+                if (entries != null)
                 {
-                    if (raw[i] != MagicHeader[i])
+                    foreach (var e in entries)
                     {
-                        Logger.Warning("OnlineStickerImageCache", "缓存文件头不匹配，忽略旧缓存文件");
-                        return;
+                        _index[e.Id] = e;
                     }
                 }
 
-                var iv = new byte[16];
-                Array.Copy(raw, MagicHeaderLength, iv, 0, 16);
-                var cipherText = new byte[raw.Length - MagicHeaderLength - 16];
-                Array.Copy(raw, MagicHeaderLength + 16, cipherText, 0, cipherText.Length);
-
-                var zipBytes = Decrypt(cipherText, iv);
-
-                using var ms = new MemoryStream(zipBytes);
-                using var zip = new ZipArchive(ms, ZipArchiveMode.Read);
-
-                var indexEntry = zip.GetEntry("index.json");
-                if (indexEntry != null)
-                {
-                    using var reader = new StreamReader(indexEntry.Open());
-                    var json = reader.ReadToEnd();
-                    var entries = JsonSerializer.Deserialize<List<CacheIndexEntry>>(json);
-                    if (entries != null)
-                    {
-                        foreach (var e in entries)
-                        {
-                            _index[e.Id] = e;
-                        }
-                    }
-                }
-
-                foreach (var entry in zip.Entries)
-                {
-                    if (entry.Name == "index.json")
-                    {
-                        continue;
-                    }
-
-                    var id = Path.GetFileNameWithoutExtension(entry.Name);
-                    using var entryStream = entry.Open();
-                    using var buffer = new MemoryStream();
-                    entryStream.CopyTo(buffer);
-                    _imageBytesById[id] = buffer.ToArray();
-                }
-
-                Logger.Info("OnlineStickerImageCache", $"已加载离线缓存: {_imageBytesById.Count} 张图片");
+                Logger.Info("OnlineStickerImageCache", $"已加载离线缓存索引: {_index.Count} 条");
             }
             catch (Exception ex)
             {
-                Logger.Warning("OnlineStickerImageCache", $"加载缓存失败，将从空缓存开始: {ex.Message}");
-                _imageBytesById.Clear();
+                Logger.Warning("OnlineStickerImageCache", $"加载缓存索引失败: {ex.Message}");
                 _index.Clear();
             }
         }
 
-        /// <summary>
-        /// 调用方需持有 _lock。把内存里的图片和索引重新打包成 zip，加密后连同魔术头写回单一文件
-        /// </summary>
-        private void Persist()
+        /// <summary>调用方需持有 _lock</summary>
+        private void PersistIndex()
         {
             try
             {
-                using var zipStream = new MemoryStream();
-                using (var zip = new ZipArchive(zipStream, ZipArchiveMode.Create, leaveOpen: true))
-                {
-                    var indexJson = JsonSerializer.Serialize(_index.Values.ToList());
-                    var indexZipEntry = zip.CreateEntry("index.json", CompressionLevel.Fastest);
-                    using (var writer = new StreamWriter(indexZipEntry.Open()))
-                    {
-                        writer.Write(indexJson);
-                    }
-
-                    foreach (var kvp in _imageBytesById)
-                    {
-                        var ext = _index.TryGetValue(kvp.Key, out var entry) ? entry.Extension : ".bin";
-                        var imageZipEntry = zip.CreateEntry(kvp.Key + ext, CompressionLevel.Fastest);
-                        using var entryStream = imageZipEntry.Open();
-                        entryStream.Write(kvp.Value, 0, kvp.Value.Length);
-                    }
-                }
-
+                var json = JsonSerializer.Serialize(_index.Values.ToList());
                 var iv = RandomNumberGenerator.GetBytes(16);
-                var encrypted = Encrypt(zipStream.ToArray(), iv);
-
-                using var output = new MemoryStream();
-                output.Write(MagicHeader, 0, MagicHeader.Length);
-                output.Write(iv, 0, iv.Length);
-                output.Write(encrypted, 0, encrypted.Length);
-
-                File.WriteAllBytes(_archivePath, output.ToArray());
+                var encrypted = Encrypt(Encoding.UTF8.GetBytes(json), iv);
+                File.WriteAllBytes(_indexPath, WrapEnvelope(iv, encrypted));
             }
             catch (Exception ex)
             {
-                Logger.Warning("OnlineStickerImageCache", $"持久化缓存失败: {ex.Message}");
+                Logger.Warning("OnlineStickerImageCache", $"保存缓存索引失败: {ex.Message}");
             }
         }
+
+        // ---------- 魔术头信封：所有落盘文件都长这样，裸眼/解压工具都认不出 ----------
+
+        private static byte[] WrapEnvelope(byte[] iv, byte[] cipherText)
+        {
+            using var output = new MemoryStream();
+            output.Write(MagicHeader, 0, MagicHeader.Length);
+            output.Write(iv, 0, iv.Length);
+            output.Write(cipherText, 0, cipherText.Length);
+            return output.ToArray();
+        }
+
+        private static bool TryUnwrapEnvelope(byte[] raw, out byte[] iv, out byte[] cipherText)
+        {
+            iv = Array.Empty<byte>();
+            cipherText = Array.Empty<byte>();
+
+            if (raw.Length <= MagicHeaderLength + 16)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < MagicHeaderLength; i++)
+            {
+                if (raw[i] != MagicHeader[i])
+                {
+                    return false;
+                }
+            }
+
+            iv = new byte[16];
+            Array.Copy(raw, MagicHeaderLength, iv, 0, 16);
+            cipherText = new byte[raw.Length - MagicHeaderLength - 16];
+            Array.Copy(raw, MagicHeaderLength + 16, cipherText, 0, cipherText.Length);
+            return true;
+        }
+
+        // ---------- 加解密 ----------
 
         private static byte[] DeriveKey(string seed)
         {
@@ -338,9 +435,7 @@ namespace VPet.Plugin.LLMEP.Services
             return ".bin";
         }
 
-        /// <summary>
-        /// 调用方需持有 _lock。清理过期（7天未访问）或超出数量上限的缓存条目
-        /// </summary>
+        /// <summary>调用方需持有 _lock。清理过期（7天未访问）或超出数量上限的缓存条目，含对应磁盘文件</summary>
         private void CleanupIfNeeded()
         {
             var now = DateTime.UtcNow;
@@ -351,8 +446,7 @@ namespace VPet.Plugin.LLMEP.Services
 
             foreach (var id in expiredIds)
             {
-                _index.Remove(id);
-                _imageBytesById.Remove(id);
+                RemoveEntry(id);
             }
 
             if (_index.Count > MaxCachedFiles)
@@ -365,9 +459,34 @@ namespace VPet.Plugin.LLMEP.Services
 
                 foreach (var id in overflowIds)
                 {
-                    _index.Remove(id);
-                    _imageBytesById.Remove(id);
+                    RemoveEntry(id);
                 }
+            }
+        }
+
+        /// <summary>调用方需持有 _lock</summary>
+        private void RemoveEntry(string id)
+        {
+            _index.Remove(id);
+
+            if (_lruNodes.TryGetValue(id, out var node))
+            {
+                _lruOrder.Remove(node);
+                _lruNodes.Remove(id);
+                _lruBytes.Remove(id);
+            }
+
+            try
+            {
+                var path = GetImagePath(id);
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Warning("OnlineStickerImageCache", $"删除过期缓存文件失败: {id}, {ex.Message}");
             }
         }
     }
