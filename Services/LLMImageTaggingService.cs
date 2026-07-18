@@ -253,6 +253,9 @@ namespace VPet.Plugin.LLMEP.Services
             {
                 var emotionSettings = settings.EmotionAnalysis;
 
+                // 应用代理设置到 LLM HttpClient 工厂
+                LLMHttpClientFactory.Configure(emotionSettings);
+
                 return emotionSettings.Provider switch
                 {
                     LLMProvider.OpenAI => new OpenAIClient(
@@ -325,7 +328,8 @@ namespace VPet.Plugin.LLMEP.Services
         {
             try
             {
-                using var httpClient = new HttpClient();
+                LLMHttpClientFactory.Configure(settings.EmotionAnalysis);
+                using var httpClient = LLMHttpClientFactory.Create();
                 httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {settings.EmotionAnalysis.OpenAIApiKey}");
 
                 string url = $"{settings.EmotionAnalysis.OpenAIBaseUrl.TrimEnd('/')}/chat/completions";
@@ -393,7 +397,8 @@ namespace VPet.Plugin.LLMEP.Services
         {
             try
             {
-                using var httpClient = new HttpClient();
+                LLMHttpClientFactory.Configure(settings.EmotionAnalysis);
+                using var httpClient = LLMHttpClientFactory.Create();
 
                 string url = $"{settings.EmotionAnalysis.GeminiBaseUrl.TrimEnd('/')}/models/{settings.EmotionAnalysis.GeminiModel}:generateContent?key={settings.EmotionAnalysis.GeminiApiKey}";
 

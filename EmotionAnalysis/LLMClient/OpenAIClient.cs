@@ -52,7 +52,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
             _model = model;
             _embeddingModel = embeddingModel;
             _imageMgr = imageMgr;
-            _httpClient = new HttpClient();
+            _httpClient = LLMHttpClientFactory.Create();
             _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
         }
 

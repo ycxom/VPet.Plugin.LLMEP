@@ -56,7 +56,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
 
             LoadConfig();
 
-            _httpClient = new HttpClient();
+            _httpClient = LLMHttpClientFactory.Create();
             _httpClient.Timeout = TimeSpan.FromSeconds(30);
 
             // 设置API密钥
@@ -236,7 +236,8 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
         {
             try
             {
-                using var client = new HttpClient();
+                // 公开配置直连下载，显式禁用代理
+                using var client = new HttpClient(new HttpClientHandler { UseProxy = false, Proxy = null });
                 client.Timeout = TimeSpan.FromSeconds(10);
                 var url = "https://vpetllm.ycxom.com/api/vpetllm.json";
                 _imageMgr?.LogDebug("FreeClient", $"开始下载版本信息: {url}");
@@ -330,7 +331,8 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
         {
             try
             {
-                using var client = new HttpClient();
+                // 公开配置直连下载，显式禁用代理
+                using var client = new HttpClient(new HttpClientHandler { UseProxy = false, Proxy = null });
                 client.Timeout = TimeSpan.FromSeconds(10);
                 var url = $"https://vpetllm.ycxom.com/api/{configName}";
                 return await client.GetStringAsync(url);

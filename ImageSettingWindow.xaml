@@ -159,12 +159,27 @@
                         <!-- Free配置 -->
                         <GroupBox x:Name="PanelFree" Header="Free 配置 (免费)" Margin="0,0,0,20" Visibility="Collapsed">
                             <StackPanel Margin="10">
-                                <TextBlock x:Name="TextBlockFreeDescription" 
-                                         Text="ℹ️ Free服务使用VPetLLM的免费配置，无需额外设置API Key" 
+                                <TextBlock x:Name="TextBlockFreeDescription"
+                                         Text="ℹ️ Free服务使用VPetLLM的免费配置，无需额外设置API Key"
                                          Foreground="Blue" Margin="0,0,0,10" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="TextBlockFreeProvider" 
-                                         Text="感谢提供者 QQ：790132463" 
+                                <TextBlock x:Name="TextBlockFreeProvider"
+                                         Text="感谢提供者 QQ：790132463"
                                          Foreground="Green" Margin="0,0,0,10" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <!-- 网络代理配置 -->
+                        <GroupBox Header="网络代理" Margin="0,0,0,20">
+                            <StackPanel Margin="10">
+                                <TextBlock Text="LLM 请求代理模式:" Margin="0,5,0,2"/>
+                                <ComboBox x:Name="ComboBoxProxyMode" Margin="0,0,0,10" SelectionChanged="ComboBoxProxyMode_SelectionChanged">
+                                    <ComboBoxItem Content="跟随系统代理" Tag="System"/>
+                                    <ComboBoxItem Content="直连（不使用代理）" Tag="Direct"/>
+                                    <ComboBoxItem Content="自定义代理" Tag="Custom"/>
+                                </ComboBox>
+                                <TextBlock x:Name="TextBlockProxyAddress" Text="代理地址 (如 http://127.0.0.1:7890 或 socks5://127.0.0.1:7891):" Margin="0,5,0,2" Visibility="Collapsed"/>
+                                <TextBox x:Name="TextBoxProxyAddress" Margin="0,0,0,5" TextChanged="TextBoxProxyAddress_TextChanged" Visibility="Collapsed"/>
+                                <TextBlock Text="ℹ️ 仅影响本插件的 LLM 情感分析/打标请求" Foreground="#666666" FontSize="12" Margin="0,0,0,0" TextWrapping="Wrap"/>
                             </StackPanel>
                         </GroupBox>
                     </StackPanel>

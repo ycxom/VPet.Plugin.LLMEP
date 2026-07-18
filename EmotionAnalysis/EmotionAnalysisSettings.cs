@@ -52,6 +52,15 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
         public int MaxCacheSize { get; set; } = 1000;
         public int TopKMatches { get; set; } = 3;
 
+        // 代理设置
+        // System = 跟随系统代理（默认，与历史行为一致）；Direct = 直连；Custom = 自定义代理地址
+        public string ProxyMode { get; set; } = "System";
+
+        /// <summary>
+        /// 自定义代理地址（仅 ProxyMode = Custom 时生效），如 http://127.0.0.1:7890 或 socks5://127.0.0.1:7891
+        /// </summary>
+        public string ProxyAddress { get; set; } = "";
+
         /// <summary>
         /// 克隆设置
         /// </summary>
@@ -76,7 +85,9 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 MinRequestIntervalMs = this.MinRequestIntervalMs,
                 CacheExpirationHours = this.CacheExpirationHours,
                 MaxCacheSize = this.MaxCacheSize,
-                TopKMatches = this.TopKMatches
+                TopKMatches = this.TopKMatches,
+                ProxyMode = this.ProxyMode,
+                ProxyAddress = this.ProxyAddress
             };
         }
 
@@ -104,7 +115,9 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                    MinRequestIntervalMs == other.MinRequestIntervalMs &&
                    CacheExpirationHours == other.CacheExpirationHours &&
                    MaxCacheSize == other.MaxCacheSize &&
-                   TopKMatches == other.TopKMatches;
+                   TopKMatches == other.TopKMatches &&
+                   ProxyMode == other.ProxyMode &&
+                   ProxyAddress == other.ProxyAddress;
         }
     }
 }

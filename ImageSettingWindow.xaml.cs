@@ -191,6 +191,23 @@ namespace VPet.Plugin.LLMEP
 
                 TextBoxOllamaBaseUrl.Text = settings.EmotionAnalysis.OllamaBaseUrl ?? "http://localhost:11434";
                 ComboBoxOllamaModel.Text = settings.EmotionAnalysis.OllamaModel ?? "llama2";
+
+                // 加载代理设置
+                var proxyMode = settings.EmotionAnalysis.ProxyMode ?? "System";
+                foreach (ComboBoxItem item in ComboBoxProxyMode.Items)
+                {
+                    if ((string)item.Tag == proxyMode)
+                    {
+                        ComboBoxProxyMode.SelectedItem = item;
+                        break;
+                    }
+                }
+                if (ComboBoxProxyMode.SelectedItem == null)
+                {
+                    ComboBoxProxyMode.SelectedIndex = 0;
+                }
+                TextBoxProxyAddress.Text = settings.EmotionAnalysis.ProxyAddress ?? "";
+                UpdateProxyAddressVisibility(proxyMode);
             }
 
             // 加载AI图片标签生成设置
@@ -479,6 +496,31 @@ namespace VPet.Plugin.LLMEP
             {
                 settings.EmotionAnalysis.IsVisionModel = checkBox.IsChecked == true;
             }
+        }
+
+        private void ComboBoxProxyMode_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (settings?.EmotionAnalysis == null || ComboBoxProxyMode.SelectedItem is not ComboBoxItem item)
+                return;
+
+            var mode = (string)item.Tag;
+            settings.EmotionAnalysis.ProxyMode = mode;
+            UpdateProxyAddressVisibility(mode);
+        }
+
+        private void TextBoxProxyAddress_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (settings?.EmotionAnalysis != null && sender is TextBox textBox)
+            {
+                settings.EmotionAnalysis.ProxyAddress = textBox.Text;
+            }
+        }
+
+        private void UpdateProxyAddressVisibility(string mode)
+        {
+            var visibility = mode == "Custom" ? Visibility.Visible : Visibility.Collapsed;
+            TextBlockProxyAddress.Visibility = visibility;
+            TextBoxProxyAddress.Visibility = visibility;
         }
 
         private void CheckBoxAIImageTagging_Changed(object sender, RoutedEventArgs e)
@@ -980,6 +1022,12 @@ namespace VPet.Plugin.LLMEP
 
             try
             {
+                // 应用当前代理设置后再创建客户端
+                if (settings?.EmotionAnalysis != null)
+                {
+                    EmotionAnalysis.LLMHttpClientFactory.Configure(settings.EmotionAnalysis);
+                }
+
                 // 创建对应的客户端
                 ILLMClient client = provider switch
                 {

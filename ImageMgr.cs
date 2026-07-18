@@ -1492,6 +1492,9 @@ namespace VPet.Plugin.LLMEP
             {
                 var config = settings.EmotionAnalysis;
 
+                // 应用代理设置到 LLM HttpClient 工厂
+                LLMHttpClientFactory.Configure(config);
+
                 switch (config.Provider)
                 {
                     case LLMProvider.OpenAI:

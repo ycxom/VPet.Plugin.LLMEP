@@ -54,7 +54,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
             _model = model ?? DEFAULT_MODEL;
             _embeddingModel = embeddingModel ?? DEFAULT_EMBEDDING_MODEL;
             _imageMgr = imageMgr;
-            _httpClient = new HttpClient();
+            _httpClient = LLMHttpClientFactory.Create();
             _httpClient.Timeout = TimeSpan.FromSeconds(30);
         }
 

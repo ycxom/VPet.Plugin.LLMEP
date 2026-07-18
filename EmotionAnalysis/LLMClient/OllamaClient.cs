@@ -63,7 +63,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
             _baseUrl = baseUrl.TrimEnd('/');
             _model = model;
             _imageMgr = imageMgr;
-            _httpClient = new HttpClient();
+            _httpClient = LLMHttpClientFactory.Create();
             _httpClient.Timeout = TimeSpan.FromSeconds(60); // Ollama可能需要更长时间
         }
 
