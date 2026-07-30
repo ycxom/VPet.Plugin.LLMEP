@@ -32,6 +32,11 @@ namespace VPet.Plugin.LLMEP
         private LLMImageTaggingService aiTaggingService;
         private bool isAIProcessing = false;
 
+        // 打标服务的事件处理器。存成字段才能在关窗时解绑——匿名 lambda 是摘不掉的，
+        // 而这两个闭包捕获了 this，任务只要还在跑就会把整个窗口留在内存里。
+        private EventHandler<ImageTaggingProgressEventArgs> aiProgressHandler;
+        private EventHandler<ImageTaggingCompletedEventArgs> aiCompletedHandler;
+
         public ImageSettingWindow(ImageMgr imageMgr)
         {
             InitializeComponent();
@@ -1149,7 +1154,7 @@ namespace VPet.Plugin.LLMEP
                 aiTaggingService = new LLMImageTaggingService(imageMgr, labelManager, pluginDir);
 
                 // 订阅进度事件
-                aiTaggingService.ProgressChanged += (s, e) =>
+                aiProgressHandler = (s, e) =>
                 {
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
@@ -1163,25 +1168,38 @@ namespace VPet.Plugin.LLMEP
                         }
                     }));
                 };
+                aiTaggingService.ProgressChanged += aiProgressHandler;
 
                 // 订阅完成事件
-                aiTaggingService.ProcessingCompleted += (s, e) =>
+                aiCompletedHandler = (s, e) =>
                 {
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
                         isAIProcessing = false;
                         UpdateAIProcessingUI();
 
-                        string message = $"AI标签生成完成！\n成功: {e.SuccessCount} 张\n失败: {e.FailedCount} 张\n总计: {e.TotalCount} 张";
-                        MessageBox.Show(message, "处理完成", MessageBoxButton.OK, MessageBoxImage.Information);
+                        // 取消和跑完是两回事：取消时报"生成完成"会让用户以为
+                        // 剩下的图片也处理过了
+                        if (e.IsCancelled)
+                        {
+                            string cancelMessage = $"AI标签生成已取消。\n取消前已处理:\n成功: {e.SuccessCount} 张\n失败: {e.FailedCount} 张\n计划处理: {e.TotalCount} 张";
+                            MessageBox.Show(cancelMessage, "已取消", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        }
+                        else
+                        {
+                            string message = $"AI标签生成完成！\n成功: {e.SuccessCount} 张\n失败: {e.FailedCount} 张\n总计: {e.TotalCount} 张";
+                            MessageBox.Show(message, "处理完成", MessageBoxButton.OK, MessageBoxImage.Information);
+                        }
 
                         if (TextBlockAIProcessingStatus != null)
                         {
-                            TextBlockAIProcessingStatus.Text = $"状态: 处理完成 (成功 {e.SuccessCount}, 失败 {e.FailedCount})";
+                            TextBlockAIProcessingStatus.Text = e.IsCancelled
+                                ? $"状态: 已取消 (成功 {e.SuccessCount}, 失败 {e.FailedCount})"
+                                : $"状态: 处理完成 (成功 {e.SuccessCount}, 失败 {e.FailedCount})";
                         }
                         if (TextBlockStatus != null)
                         {
-                            TextBlockStatus.Text = "AI处理完成";
+                            TextBlockStatus.Text = e.IsCancelled ? "AI处理已取消" : "AI处理完成";
                         }
 
                         // 刷新图片树以显示新标签
@@ -1189,6 +1207,7 @@ namespace VPet.Plugin.LLMEP
                         UpdateImageTree();
                     }));
                 };
+                aiTaggingService.ProcessingCompleted += aiCompletedHandler;
 
                 Utils.Logger.Debug("LabelManager", "AI标签生成服务初始化完成");
             }
@@ -1610,6 +1629,35 @@ namespace VPet.Plugin.LLMEP
             {
                 logUpdateTimer.Stop();
                 logUpdateTimer = null;
+            }
+
+            // 取消仍在运行的 AI 批量打标。
+            //
+            // 不取消的话，任务会继续跑（每张图之间还有 3 秒间隔），并通过
+            // ProgressChanged / ProcessingCompleted 上的匿名 lambda 把整个窗口
+            // 一直留在内存里；跑完还会从这个已经关闭的窗口弹出"处理完成"对话框。
+            if (aiTaggingService != null)
+            {
+                if (aiTaggingService.IsProcessing)
+                {
+                    aiTaggingService.StopProcessing();
+                    Utils.Logger.Info("LabelManager", "设置窗口关闭，已取消进行中的 AI 标签生成");
+                }
+
+                // 必须解绑：取消只是让循环 break，之后仍会走到 OnProcessingCompleted，
+                // 处理器还挂着的话就会从这个已关闭的窗口弹出"处理完成"对话框。
+                if (aiProgressHandler != null)
+                {
+                    aiTaggingService.ProgressChanged -= aiProgressHandler;
+                    aiProgressHandler = null;
+                }
+                if (aiCompletedHandler != null)
+                {
+                    aiTaggingService.ProcessingCompleted -= aiCompletedHandler;
+                    aiCompletedHandler = null;
+                }
+
+                aiTaggingService = null;
             }
 
             // 如果用户没有保存，恢复原始设置

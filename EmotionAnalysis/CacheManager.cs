@@ -36,6 +36,12 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
         private DateTime _lastSaveTime;
         private readonly TimeSpan _saveInterval = TimeSpan.FromMinutes(5);
 
+        /// <summary>
+        /// 距上次落盘之后是否有未保存的改动。配合 <see cref="_saveInterval"/> 做节流，
+        /// 关闭时的兜底保存（CleanupEmotionAnalysis）保证不丢数据。
+        /// </summary>
+        private bool _isDirty;
+
         public CacheManager(string cachePath)
         {
             _cachePath = cachePath;
@@ -170,19 +176,13 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
         {
             try
             {
-                var now = DateTime.Now;
+                var beforeCount = _persistentCache.Count;
 
-                // 合并内存缓存和持久化缓存，过滤过期条目
-                var validEntries = _persistentCache.Values
-                    .Where(e => (now - e.LastUsed).TotalDays <= CACHE_EXPIRATION_DAYS)
-                    .ToList();
-
-                // 按使用频率排序，保留前1000个
-                var topEntries = validEntries
-                    .OrderByDescending(e => e.HitCount)
-                    .ThenByDescending(e => e.LastUsed)
-                    .Take(MAX_PERSISTENT_CACHE_SIZE)
-                    .ToList();
+                // 先把内存里的字典裁到上限，再落盘。
+                // 这一步是关键：以前只把 Take(1000) 的结果写进文件，_persistentCache
+                // 本身从不收缩，于是磁盘封顶 1000 条、内存却是每分析一句新话就多一条，
+                // 永久增长；而 Save 又在每次写入时被调用，字典越大越慢。
+                var topEntries = TrimPersistentCache();
 
                 var json = JsonSerializer.Serialize(topEntries, new JsonSerializerOptions
                 {
@@ -191,8 +191,9 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
 
                 File.WriteAllText(_cachePath, json);
                 _lastSaveTime = DateTime.Now;
+                _isDirty = false;
 
-                var removedCount = validEntries.Count - topEntries.Count;
+                var removedCount = beforeCount - topEntries.Count;
                 Utils.Logger.Log($"[Cache] Saved {topEntries.Count} entries, removed {removedCount} low-priority entries");
                 Utils.Logger.Info("CacheManager", $"保存了 {topEntries.Count} 个缓存条目，移除了 {removedCount} 个低优先级条目");
             }
@@ -201,6 +202,56 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 Utils.Logger.Log($"[Cache] Save error: {ex.Message}");
                 Utils.Logger.Error("CacheManager", $"保存缓存失败: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 按"过期优先、命中少优先"把 <see cref="_persistentCache"/> 裁剪到
+        /// <see cref="MAX_PERSISTENT_CACHE_SIZE"/> 以内，并返回保留下来的条目。
+        /// 内存字典会被真正替换掉内容，不只是筛出一份副本。
+        /// </summary>
+        private List<CacheEntry> TrimPersistentCache()
+        {
+            var now = DateTime.Now;
+
+            var topEntries = _persistentCache.Values
+                .Where(e => (now - e.LastUsed).TotalDays <= CACHE_EXPIRATION_DAYS)
+                .OrderByDescending(e => e.HitCount)
+                .ThenByDescending(e => e.LastUsed)
+                .Take(MAX_PERSISTENT_CACHE_SIZE)
+                .ToList();
+
+            if (topEntries.Count != _persistentCache.Count)
+            {
+                _persistentCache.Clear();
+                foreach (var entry in topEntries)
+                {
+                    _persistentCache[entry.TextHash] = entry;
+                }
+            }
+
+            return topEntries;
+        }
+
+        /// <summary>
+        /// 节流保存：有改动且距上次落盘超过 <see cref="_saveInterval"/> 时才真正写盘。
+        /// 即便这次不写盘，也会把内存字典裁到上限，保证占用不会无限涨。
+        /// </summary>
+        private void SaveThrottled()
+        {
+            if (!_isDirty)
+                return;
+
+            if (DateTime.Now - _lastSaveTime < _saveInterval)
+            {
+                // 落盘可以等，内存不能等：条数超限就先裁掉
+                if (_persistentCache.Count > MAX_PERSISTENT_CACHE_SIZE)
+                {
+                    TrimPersistentCache();
+                }
+                return;
+            }
+
+            Save();
         }
 
         /// <summary>
@@ -288,8 +339,11 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
             Utils.Logger.Log($"[Cache] Cached: {text} -> {string.Join(", ", emotions)}");
             Utils.Logger.Info("CacheManager", $"缓存新结果: {text} -> [{string.Join(", ", emotions)}]");
 
-            // 立即保存缓存以确保数据持久化
-            Save();
+            // 节流保存：原先每缓存一条就全量排序 + 序列化 + 写文件一次，
+            // 也就是桌宠每说一句新话都要重写整个缓存文件。
+            // 退出时 CleanupEmotionAnalysis 会调 Save() 兜底，不会丢数据。
+            _isDirty = true;
+            SaveThrottled();
         }
 
         /// <summary>

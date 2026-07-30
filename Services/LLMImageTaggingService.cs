@@ -86,12 +86,14 @@ namespace VPet.Plugin.LLMEP.Services
 
                 int processedCount = 0;
                 int failedCount = 0;
+                bool cancelled = false;
 
                 foreach (var image in unprocessedImages)
                 {
                     if (_cancellationTokenSource.Token.IsCancellationRequested)
                     {
                         Utils.Logger.Info("LLMImageTagging", "处理已取消");
+                        cancelled = true;
                         break;
                     }
 
@@ -141,20 +143,35 @@ namespace VPet.Plugin.LLMEP.Services
                     // 间隔3秒后处理下一张
                     if (processedCount + failedCount < unprocessedImages.Count)
                     {
-                        await Task.Delay(3000, _cancellationTokenSource.Token);
+                        try
+                        {
+                            await Task.Delay(3000, _cancellationTokenSource.Token);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            // 取消是正常流程，不该被外层当成"处理过程发生错误"记进日志，
+                            // 更不该因为异常逃逸而跳过下面的收尾（保存标签 + 通知调用方）
+                            Utils.Logger.Info("LLMImageTagging", "处理已取消");
+                            cancelled = true;
+                            break;
+                        }
                     }
                 }
 
-                // 保存所有标签
+                // 保存所有标签（取消时同样要保存，已处理的那部分不该白跑）
                 _labelManager.SaveLabels();
 
-                Utils.Logger.Info("LLMImageTagging", $"处理完成: 成功 {processedCount} 张, 失败 {failedCount} 张");
+                Utils.Logger.Info("LLMImageTagging",
+                    cancelled
+                        ? $"处理已取消: 已完成 成功 {processedCount} 张, 失败 {failedCount} 张"
+                        : $"处理完成: 成功 {processedCount} 张, 失败 {failedCount} 张");
 
                 OnProcessingCompleted(new ImageTaggingCompletedEventArgs
                 {
                     SuccessCount = processedCount,
                     FailedCount = failedCount,
-                    TotalCount = unprocessedImages.Count
+                    TotalCount = unprocessedImages.Count,
+                    IsCancelled = cancelled
                 });
             }
             catch (Exception ex)
@@ -740,5 +757,11 @@ namespace VPet.Plugin.LLMEP.Services
         public int SuccessCount { get; set; }
         public int FailedCount { get; set; }
         public int TotalCount { get; set; }
+
+        /// <summary>
+        /// 本次是被取消的（用户点了停止，或设置窗口被关闭），而不是跑完了全部图片。
+        /// 取消时 SuccessCount / FailedCount 仍然有效，代表取消之前已经处理掉的数量。
+        /// </summary>
+        public bool IsCancelled { get; set; }
     }
 }
