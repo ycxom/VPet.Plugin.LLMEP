@@ -118,6 +118,16 @@ namespace VPet.Plugin.LLMEP
 
                 Utils.Logger.Info("Plugin", "开始加载插件");
 
+                // 挂接退出事件。
+                //
+                // 这个插件此前没有任何关闭钩子：UnloadPlugin() 没有调用点（死代码），
+                // 也没有重写 Save()。后果有两个——设置窗口在退出时不会被关闭，
+                // 以及情感分析缓存的最后一批改动来不及落盘。
+                if (Application.Current is not null)
+                {
+                    Application.Current.Exit += OnApplicationExit;
+                }
+
                 // Create ImageUI
                 image = new ImageUI(this);
 
@@ -361,6 +371,37 @@ namespace VPet.Plugin.LLMEP
         }
 
         /// <summary>
+        /// VPet 退出时的收尾。挂在 Application.Exit 上。
+        /// </summary>
+        private void OnApplicationExit(object sender, ExitEventArgs e)
+        {
+            UnloadPlugin();
+        }
+
+        /// <summary>
+        /// 关闭插件自己开的窗口。退出路径专用，单个窗口关闭失败不能中断后续清理。
+        /// </summary>
+        private void CloseOwnedWindows()
+        {
+            try
+            {
+                if (winSetting != null)
+                {
+                    // 这个窗口的 Owner 是 VPet 主窗口：退出时主窗口 HWND 一销毁，
+                    // Win32 会连带把它干掉（绕过 WPF），等到 Dispatcher.ShutdownFinished
+                    // WPF 再去 DestroyWindow 就会抛 Win32Exception(1400) 无效窗口句柄。
+                    // 主动 Close() 让 HwndSource 在句柄还有效时有序释放。
+                    winSetting.Dispatcher.Invoke(winSetting.Close);
+                    winSetting = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                LogMessage($"关闭设置窗口失败（退出流程继续）: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// 插件卸载时的清理工作
         /// </summary>
         public void UnloadPlugin()
@@ -368,6 +409,9 @@ namespace VPet.Plugin.LLMEP
             try
             {
                 LogMessage("开始卸载插件");
+
+                // 先关窗口，早于其它清理
+                CloseOwnedWindows();
 
                 // 停止定时器
                 StopTimer();

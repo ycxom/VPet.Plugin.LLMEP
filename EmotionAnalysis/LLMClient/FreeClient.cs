@@ -1,4 +1,4 @@
-using Newtonsoft.Json.Linq;
+﻿using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -236,9 +236,11 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
         {
             try
             {
-                // 公开配置直连下载，显式禁用代理
-                using var client = new HttpClient(new HttpClientHandler { UseProxy = false, Proxy = null });
-                client.Timeout = TimeSpan.FromSeconds(10);
+                // 公开配置直连下载，显式禁用代理。
+                // handler（连接池）按代理配置共享，这里 Dispose 的只是 HttpClient 壳子。
+                using var client = Utils.HttpHandlerPool.CreateClient(
+                    () => new HttpClientHandler { UseProxy = false, Proxy = null },
+                    TimeSpan.FromSeconds(10));
                 var url = "https://vpetllm.ycxom.com/api/vpetllm.json";
                 _imageMgr?.LogDebug("FreeClient", $"开始下载版本信息: {url}");
                 var response = await client.GetStringAsync(url);
@@ -331,9 +333,11 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
         {
             try
             {
-                // 公开配置直连下载，显式禁用代理
-                using var client = new HttpClient(new HttpClientHandler { UseProxy = false, Proxy = null });
-                client.Timeout = TimeSpan.FromSeconds(10);
+                // 公开配置直连下载，显式禁用代理。
+                // handler（连接池）按代理配置共享，这里 Dispose 的只是 HttpClient 壳子。
+                using var client = Utils.HttpHandlerPool.CreateClient(
+                    () => new HttpClientHandler { UseProxy = false, Proxy = null },
+                    TimeSpan.FromSeconds(10));
                 var url = $"https://vpetllm.ycxom.com/api/{configName}";
                 return await client.GetStringAsync(url);
             }

@@ -28,6 +28,13 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
         /// </summary>
         public static HttpClient Create(TimeSpan? timeout = null)
         {
+            // handler（连接池）按代理配置共享，返回的 HttpClient 仍是独立实例，
+            // 调用方 Dispose 掉的只是这层壳子。
+            return Utils.HttpHandlerPool.CreateClient(CreateHandler, timeout);
+        }
+
+        private static HttpClientHandler CreateHandler()
+        {
             HttpClientHandler handler;
             switch (_proxyMode)
             {
@@ -66,12 +73,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                     break;
             }
 
-            var client = new HttpClient(handler);
-            if (timeout.HasValue)
-            {
-                client.Timeout = timeout.Value;
-            }
-            return client;
+            return handler;
         }
     }
 }
