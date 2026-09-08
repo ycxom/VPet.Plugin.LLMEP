@@ -75,6 +75,12 @@ namespace VPet.Plugin.LLMEP
             random = new Random();
             imagepath = new Dictionary<IGameSave.ModeType, List<BitmapImage>>();
 
+            // 官方服务（在线表情包 / Free 模型）的鉴权通道：身份与加解密都在
+            // 本 MOD 自带的 VPetLLM.SecureCommunication.dll 里完成。
+            AuthenticatedServiceTransport.Initialize();
+            // 状态里带原因（缺原生组件 / 架构不匹配），直接记下来省得回头再猜
+            Logger.Info("ImageMgr", $"官方服务鉴权通道: {AuthenticatedServiceTransport.StatusMessage}");
+
             // 初始化设置
             InitializeSettings();
         }
@@ -2237,7 +2243,7 @@ namespace VPet.Plugin.LLMEP
                 LogMessage("开始初始化在线表情包管理器");
 
                 // 创建在线表情包管理器
-                onlineStickerManager = new OnlineStickerManager(this, MW);
+                onlineStickerManager = new OnlineStickerManager(this);
 
                 // 应用当前设置
                 UpdateOnlineStickerManager();

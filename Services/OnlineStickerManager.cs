@@ -35,32 +35,16 @@ namespace VPet.Plugin.LLMEP.Services
         public int CacheDurationMinutes { get; set; } = 5;
         public int DisplayDurationSeconds { get; set; } = 6;
 
-        public OnlineStickerManager(ImageMgr imageMgr, IMainWindow mainWindow)
+        public OnlineStickerManager(ImageMgr imageMgr)
         {
             _imageMgr = imageMgr ?? throw new ArgumentNullException(nameof(imageMgr));
             _imageCache = new OnlineStickerImageCache();
             _random = new Random();
 
-            // 获取 Steam ID 和认证密钥生成器
-            ulong steamId = 0;
-            Func<Task<int>>? getAuthKey = null;
-
-            try
-            {
-                steamId = mainWindow?.SteamID ?? 0;
-                getAuthKey = async () => await (mainWindow?.GenerateAuthKey() ?? Task.FromResult(0));
-            }
-            catch (Exception ex)
-            {
-                Logger.Warning("OnlineStickerManager", $"获取Steam信息失败: {ex.Message}");
-            }
-
-            // 初始化在线表情包服务
+            // 身份与鉴权头由本 MOD 自带的鉴权通道补齐，这里只给业务地址和凭证。
             _stickerService = new OnlineStickerService(
                 GetEffectiveServiceUrl(),
                 GetEffectiveApiKey(),
-                steamId,
-                getAuthKey,
                 UseBuiltInCredentials
             );
 

@@ -7,6 +7,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using VPet.Plugin.LLMEP.Utils;
 
 namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
 {
@@ -465,7 +466,10 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 _imageMgr?.LogDebug("FreeClient", json);
                 _imageMgr?.LogDebug("FreeClient", "=== Free HTTP 请求结束 ===");
 
-                var response = await _httpClient.PostAsync(_apiUrl, content);
+                // 官方 Free 服务：请求交给本 MOD 自带的鉴权通道，
+                // 身份、鉴权头与请求/响应加解密都在自带的原生 DLL 里完成。
+                using var request = new HttpRequestMessage(HttpMethod.Post, _apiUrl) { Content = content };
+                using var response = await AuthenticatedServiceTransport.SendAsync(_httpClient, request);
                 var responseJson = await response.Content.ReadAsStringAsync();
 
                 // 记录完整的HTTP响应信息
@@ -614,7 +618,8 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 _imageMgr?.LogDebug("FreeClient", $"Model: {_model}");
                 _imageMgr?.LogDebug("FreeClient", "=== Free Vision HTTP 请求结束 ===");
 
-                var response = await _httpClient.PostAsync(_apiUrl, content);
+                using var request = new HttpRequestMessage(HttpMethod.Post, _apiUrl) { Content = content };
+                using var response = await AuthenticatedServiceTransport.SendAsync(_httpClient, request);
                 var responseJson = await response.Content.ReadAsStringAsync();
 
                 _imageMgr?.LogDebug("FreeClient", "=== Free Vision HTTP 响应开始 ===");

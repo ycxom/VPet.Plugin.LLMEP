@@ -17,7 +17,17 @@
     <Page Remove="3001_LLMEP\**" />
     <None Include="3001_LLMEP\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-  
+
+  <ItemGroup>
+    <!-- 自带的原生鉴权组件按进程架构加载；它的位置也决定请求身份（mod_id）。 -->
+    <None Update="Native\win-x64\VPetLLM.SecureCommunication.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          TargetPath="runtimes\win-x64\native\VPetLLM.SecureCommunication.dll" />
+    <None Update="Native\win-x86\VPetLLM.SecureCommunication.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          TargetPath="runtimes\win-x86\native\VPetLLM.SecureCommunication.dll" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="VPet-Simulator.Core" Version="1.1.0.58" />
     <PackageReference Include="VPet-Simulator.Windows.Interface" Version="1.1.0.58" />
@@ -35,5 +45,16 @@
       <PluginFiles Include="$(OutputPath)*.dll" Exclude="$(OutputPath)VPet-Simulator*.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(PluginFiles)" DestinationFolder="$(ProjectDir)3001_LLMEP\plugin\" SkipUnchangedFiles="true" />
+    <!-- 原生鉴权组件必须留在 runtimes 目录里：mod_id 是按它所在目录往上找 info.lps 得到的。 -->
+    <Copy SourceFiles="$(OutputPath)runtimes\win-x64\native\VPetLLM.SecureCommunication.dll"
+          DestinationFolder="$(ProjectDir)3001_LLMEP\plugin\runtimes\win-x64\native"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(OutputPath)runtimes\win-x64\native\VPetLLM.SecureCommunication.dll')" />
+    <Copy SourceFiles="$(OutputPath)runtimes\win-x86\native\VPetLLM.SecureCommunication.dll"
+          DestinationFolder="$(ProjectDir)3001_LLMEP\plugin\runtimes\win-x86\native"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(OutputPath)runtimes\win-x86\native\VPetLLM.SecureCommunication.dll')" />
+    <Warning Text="警告: 未找到自带的原生鉴权组件 VPetLLM.SecureCommunication.dll，官方服务将不可用"
+             Condition="!Exists('$(ProjectDir)3001_LLMEP\plugin\runtimes\win-x64\native\VPetLLM.SecureCommunication.dll')" />
   </Target>
 </Project>

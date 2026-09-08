@@ -3,7 +3,6 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using VPet.Plugin.LLMEP.Utils;
@@ -19,21 +18,16 @@ namespace VPet.Plugin.LLMEP.Services
         private readonly HttpClient _httpClient;
         private readonly string _baseUrl;
         private readonly string? _apiKey;
-        private readonly ulong _steamId;
-        private readonly Func<Task<int>>? _getAuthKey;
         private readonly bool _useBuiltInCredentials;
         private List<string>? _cachedTags;
         private DateTime _cacheTime = DateTime.MinValue;
 
         public string? LastError { get; private set; }
 
-        public OnlineStickerService(string baseUrl, string? apiKey = null,
-            ulong steamId = 0, Func<Task<int>>? getAuthKey = null, bool useBuiltInCredentials = true)
+        public OnlineStickerService(string baseUrl, string? apiKey = null, bool useBuiltInCredentials = true)
         {
             _baseUrl = baseUrl.TrimEnd('/');
             _apiKey = apiKey;
-            _steamId = steamId;
-            _getAuthKey = getAuthKey;
             _useBuiltInCredentials = useBuiltInCredentials;
             _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 
@@ -41,6 +35,17 @@ namespace VPet.Plugin.LLMEP.Services
             {
                 _httpClient.DefaultRequestHeaders.Add("X-API-Key", _apiKey);
             }
+        }
+
+        /// <summary>
+        /// 官方内置服务把请求交给本 MOD 自带的鉴权通道；用户自填地址/凭证的
+        /// 第三方服务仍直接发送（不得套用官方协议）。
+        /// </summary>
+        private Task<HttpResponseMessage> SendAsync(HttpRequestMessage request)
+        {
+            if (!_useBuiltInCredentials)
+                return _httpClient.SendAsync(request);
+            return AuthenticatedServiceTransport.SendAsync(_httpClient, request);
         }
 
         /// <summary>
@@ -198,9 +203,8 @@ namespace VPet.Plugin.LLMEP.Services
 
                 using var requestMessage = new HttpRequestMessage(HttpMethod.Post, url);
                 requestMessage.Content = new StringContent(json, Encoding.UTF8, "application/json");
-                await AddCredentialHeadersAsync(requestMessage);
 
-                var response = await _httpClient.SendAsync(requestMessage);
+                var response = await SendAsync(requestMessage);
                 if (!response.IsSuccessStatusCode)
                 {
                     LastError = $"HTTP {(int)response.StatusCode}";
@@ -226,33 +230,6 @@ namespace VPet.Plugin.LLMEP.Services
             }
         }
 
-        private async Task AddCredentialHeadersAsync(HttpRequestMessage requestMessage)
-        {
-            if (!_useBuiltInCredentials)
-            {
-                return;
-            }
-
-            var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            int ck = 0;
-            if (_getAuthKey != null)
-            {
-                try
-                {
-                    ck = await _getAuthKey();
-                }
-                catch (Exception ex)
-                {
-                    Logger.Warning("OnlineStickerService", $"获取认证密钥失败: {ex.Message}");
-                }
-            }
-
-            requestMessage.Headers.Add("X-Cache-Token", EncryptData(_steamId.ToString(), ts));
-            requestMessage.Headers.Add("X-Request-Signature", EncryptData(GetMagicNumber(), ts));
-            requestMessage.Headers.Add("X-Check-Key", EncryptData(ck.ToString(), ts));
-            requestMessage.Headers.Add("X-Trace-Id", GenerateTraceId(ts));
-        }
-
         private async Task<TResponse?> PostAsync<TRequest, TResponse>(string endpoint, TRequest request)
             where TResponse : class
         {
@@ -263,9 +240,8 @@ namespace VPet.Plugin.LLMEP.Services
 
                 using var requestMessage = new HttpRequestMessage(HttpMethod.Post, url);
                 requestMessage.Content = new StringContent(json, Encoding.UTF8, "application/json");
-                await AddCredentialHeadersAsync(requestMessage);
 
-                var response = await _httpClient.SendAsync(requestMessage);
+                var response = await SendAsync(requestMessage);
                 var responseJson = await response.Content.ReadAsStringAsync();
 
                 if (response.IsSuccessStatusCode)
@@ -300,91 +276,6 @@ namespace VPet.Plugin.LLMEP.Services
         public void Dispose()
         {
             _httpClient?.Dispose();
-        }
-
-        private static string GetMagicNumber()
-        {
-            var a = 0x1A2B ^ 0x1A2B;
-            var p = new[] {
-                (char)(51+a), (char)(54+a), (char)(53+a), (char)(55+a), (char)(50+a),
-                (char)(57+a), (char)(49+a), (char)(48+a), (char)(52+a), (char)(57+a)
-            };
-            return new string(p);
-        }
-
-        private static long CalculateTimeHash(long timestamp)
-        {
-            var d = timestamp.ToString();
-            long f = 0;
-            for (int i = 0; i < d.Length; i++)
-            {
-                f += (d[i] - '0') * (i + 1);
-            }
-            return f % 60;
-        }
-
-        private static long ObfuscateTimestamp(long timestamp)
-        {
-            return (timestamp ^ (CalculateTimeHash(timestamp) * 0x5A5A)) + CalculateTimeHash(timestamp);
-        }
-
-        private static string EncryptData(string plaintext, long timestamp)
-        {
-            try
-            {
-                var obfuscatedTime = ObfuscateTimestamp(timestamp);
-                using var sha256 = SHA256.Create();
-                var key = sha256.ComputeHash(Encoding.UTF8.GetBytes(obfuscatedTime.ToString() + "VPetLLM_"));
-
-                using var md5 = MD5.Create();
-                var iv = md5.ComputeHash(Encoding.UTF8.GetBytes(timestamp.ToString()));
-
-                using var aes = Aes.Create();
-                aes.Key = key;
-                aes.IV = iv;
-                aes.Mode = CipherMode.CBC;
-                aes.Padding = PaddingMode.PKCS7;
-
-                using var encryptor = aes.CreateEncryptor();
-                var plainBytes = Encoding.UTF8.GetBytes(plaintext);
-                var encryptedBytes = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
-
-                return Convert.ToBase64String(encryptedBytes);
-            }
-            catch (Exception ex)
-            {
-                Logger.Warning("OnlineStickerService", $"数据加密失败: {ex.Message}");
-                return plaintext;
-            }
-        }
-
-        private static string GenerateTraceId(long timestamp)
-        {
-            try
-            {
-                var randomBytes = new byte[16];
-                using (var rng = RandomNumberGenerator.Create())
-                {
-                    rng.GetBytes(randomBytes);
-                }
-
-                var combined = new byte[20];
-                Array.Copy(randomBytes, 0, combined, 0, 16);
-                Array.Copy(BitConverter.GetBytes((int)(timestamp % 10000)), 0, combined, 16, 4);
-
-                var xorKey = (byte)(ObfuscateTimestamp(timestamp) & 0xFF);
-                for (int i = 0; i < 20; i++)
-                {
-                    combined[i] ^= xorKey;
-                }
-
-                return Convert.ToBase64String(combined);
-            }
-            catch (Exception ex)
-            {
-                Logger.Warning("OnlineStickerService", $"生成跟踪ID失败: {ex.Message}");
-                return Convert.ToBase64String(Guid.NewGuid().ToByteArray());
-            }
         }
     }
 
