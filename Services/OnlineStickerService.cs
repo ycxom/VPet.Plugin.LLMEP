@@ -50,13 +50,21 @@ namespace VPet.Plugin.LLMEP.Services
 
         /// <summary>
         /// 健康检查
+        /// 走 /api/stats 而不是 /api/health：服务端对带 API Key 的请求按 Key 的接口
+        /// 权限放行，内置 Key 没有 health 权限会被 403 ACCESS_DENIED；stats 同时要求
+        /// Key 与鉴权通道都有效，测的正是业务请求实际走的链路
         /// </summary>
         public async Task<bool> HealthCheckAsync()
         {
             try
             {
-                var response = await PostAsync<object, HealthResponse>("/api/health", new { });
-                return response?.Success ?? false;
+                LastError = null;
+                var response = await PostAsync<object, StatsResponse>("/api/stats", new { });
+                if (response == null)
+                    return false;
+                if (!response.Success)
+                    LastError = string.IsNullOrEmpty(response.Error) ? "服务返回失败" : response.Error;
+                return response.Success;
             }
             catch (Exception ex)
             {
@@ -340,18 +348,6 @@ namespace VPet.Plugin.LLMEP.Services
 
         [JsonProperty("tags")]
         public List<string> Tags { get; set; } = new();
-
-        [JsonProperty("error")]
-        public string? Error { get; set; }
-    }
-
-    public class HealthResponse
-    {
-        [JsonProperty("success")]
-        public bool Success { get; set; }
-
-        [JsonProperty("status")]
-        public string Status { get; set; } = string.Empty;
 
         [JsonProperty("error")]
         public string? Error { get; set; }
