@@ -22,9 +22,6 @@ namespace VPet.Plugin.LLMEP.Services
         private readonly Random _random;
         private List<string>? _availableTags;
         private DateTime _tagsLastUpdate = DateTime.MinValue;
-        
-        // 用于保存当前显示的GIF流的引用（GIF需要保持流打开才能播放）
-        private MemoryStream? _currentGifStream;
 
         // 配置参数
         public bool IsEnabled { get; set; } = false;
@@ -189,11 +186,18 @@ namespace VPet.Plugin.LLMEP.Services
         /// <summary>
         /// 根据情感搜索并显示表情包
         /// </summary>
-        public async Task<bool> SearchAndDisplayStickerAsync(string emotion, List<string> additionalTags = null)
+        /// <param name="interrupt">true=顶掉当前表情包；false=当前有表情包就放弃（自动触发，连搜索都省掉）</param>
+        public async Task<bool> SearchAndDisplayStickerAsync(string emotion, List<string> additionalTags = null, bool interrupt = true)
         {
             if (!IsEnabled)
             {
                 Logger.Debug("OnlineStickerManager", "在线表情包功能未启用，跳过搜索");
+                return false;
+            }
+
+            if (!interrupt && _imageMgr.IsStickerBusy)
+            {
+                Logger.Debug("OnlineStickerManager", "已有表情包在显示，跳过本次自动搜索");
                 return false;
             }
 
@@ -232,9 +236,8 @@ namespace VPet.Plugin.LLMEP.Services
                             imageBytes = await GetImageBytesViaBase64FallbackAsync(query, result.Id!, result.Tags);
                         }
 
-                        if (imageBytes != null)
+                        if (imageBytes != null && await DisplayImageBytesAsync(imageBytes, interrupt))
                         {
-                            await DisplayImageBytesAsync(imageBytes);
                             return true;
                         }
                     }
@@ -254,13 +257,13 @@ namespace VPet.Plugin.LLMEP.Services
             }
 
             // 服务端不可达、无匹配结果或下载失败时，尝试从本地 Temp 缓存离线检索
-            return await TryDisplayFromOfflineCacheAsync(searchTags);
+            return await TryDisplayFromOfflineCacheAsync(searchTags, interrupt);
         }
 
         /// <summary>
         /// 离线兜底：服务端不可用时，按标签在本地磁盘缓存里挑一张之前缓存过的图片显示
         /// </summary>
-        private async Task<bool> TryDisplayFromOfflineCacheAsync(List<string> searchTags)
+        private async Task<bool> TryDisplayFromOfflineCacheAsync(List<string> searchTags, bool interrupt)
         {
             if (!_imageCache.TryFindOffline(searchTags, out var offlineId, out var offlineBytes) || offlineBytes == null)
             {
@@ -268,8 +271,7 @@ namespace VPet.Plugin.LLMEP.Services
             }
 
             Logger.Info("OnlineStickerManager", $"服务端不可用，命中本地离线缓存: {offlineId}");
-            await DisplayImageBytesAsync(offlineBytes);
-            return true;
+            return await DisplayImageBytesAsync(offlineBytes, interrupt);
         }
 
         /// <summary>
@@ -291,10 +293,17 @@ namespace VPet.Plugin.LLMEP.Services
         /// <summary>
         /// 显示随机表情包
         /// </summary>
-        public async Task<bool> DisplayRandomStickerAsync()
+        /// <param name="interrupt">true=顶掉当前表情包；false=当前有表情包就放弃</param>
+        public async Task<bool> DisplayRandomStickerAsync(bool interrupt = true)
         {
             if (!IsEnabled)
             {
+                return false;
+            }
+
+            if (!interrupt && _imageMgr.IsStickerBusy)
+            {
+                Logger.Debug("OnlineStickerManager", "已有表情包在显示，跳过本次随机表情包");
                 return false;
             }
 
@@ -321,7 +330,7 @@ namespace VPet.Plugin.LLMEP.Services
                 Logger.Debug("OnlineStickerManager", $"随机选择的标签: {string.Join(", ", selectedTags)}");
 
                 // 搜索并显示
-                return await SearchAndDisplayStickerByTagsAsync(selectedTags.ToArray());
+                return await SearchAndDisplayStickerAsync(selectedTags[0], selectedTags.Skip(1).ToList(), interrupt);
             }
             catch (Exception ex)
             {
@@ -386,98 +395,13 @@ namespace VPet.Plugin.LLMEP.Services
         }
 
         /// <summary>
-        /// 显示图片二进制数据
+        /// 显示图片二进制数据。解码、显示、到点隐藏都交给 ImageMgr 的统一入口，
+        /// 这里不再自己持有 GIF 流——以前共享的 _currentGifStream 会在两轮显示重叠时互相释放。
         /// </summary>
-        private async Task DisplayImageBytesAsync(byte[] imageBytes)
+        private Task<bool> DisplayImageBytesAsync(byte[] imageBytes, bool interrupt)
         {
-            try
-            {
-                Logger.Debug("OnlineStickerManager", $"开始显示图片，字节数: {imageBytes.Length}");
-
-                // 检测 GIF 文件头 (47 49 46 38 = "GIF8")
-                var isGif = imageBytes.Length > 4 &&
-                            imageBytes[0] == 0x47 && imageBytes[1] == 0x49 &&
-                            imageBytes[2] == 0x46 && imageBytes[3] == 0x38;
-                if (isGif)
-                {
-                    Logger.Debug("OnlineStickerManager", "检测到GIF格式（通过文件头）");
-                }
-
-                // 关闭之前的GIF流（如果存在）
-                _currentGifStream?.Dispose();
-                _currentGifStream = null;
-
-                // 在 UI 线程中创建 BitmapImage 并显示
-                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    try
-                    {
-                        BitmapImage bitmapImage;
-                        MemoryStream? gifStream = null;
-                        
-                        if (isGif)
-                        {
-                            // GIF图片：保持流打开以便WpfAnimatedGif播放动画
-                            gifStream = new MemoryStream(imageBytes);
-                            bitmapImage = new BitmapImage();
-                            bitmapImage.BeginInit();
-                            bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                            bitmapImage.StreamSource = gifStream;
-                            bitmapImage.EndInit();
-                            // GIF不能冻结，否则WpfAnimatedGif无法播放
-                            
-                            // 保存流引用以便后续释放
-                            _currentGifStream = gifStream;
-                            Logger.Debug("OnlineStickerManager", "GIF流已创建并保存");
-                        }
-                        else
-                        {
-                            // 静态图片：使用using块正常关闭流
-                            using (var stream = new MemoryStream(imageBytes))
-                            {
-                                bitmapImage = new BitmapImage();
-                                bitmapImage.BeginInit();
-                                bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                                bitmapImage.StreamSource = stream;
-                                bitmapImage.EndInit();
-                                bitmapImage.Freeze(); // 静态图片可以冻结
-                            }
-                        }
-
-                        Logger.Debug("OnlineStickerManager", $"BitmapImage创建成功: {bitmapImage.PixelWidth}x{bitmapImage.PixelHeight}");
-                        Logger.Info("OnlineStickerManager", $"在线表情包准备显示: {(isGif ? "GIF动画" : "静态图片")}");
-
-                        // 显示图片（传递isGif信息确保GIF动画能正确播放）
-                        _imageMgr.DisplayImagePublic(bitmapImage, isGif);
-                        Logger.Info("OnlineStickerManager", "在线表情包显示成功");
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.Error("OnlineStickerManager", $"在UI线程中创建/显示图片失败: {ex.Message}");
-                        Logger.Debug("OnlineStickerManager", $"错误堆栈: {ex.StackTrace}");
-                    }
-                });
-
-                // 自动隐藏
-                await Task.Delay(DisplayDurationSeconds * 1000);
-                _imageMgr.HideImagePublic();
-                
-                // 隐藏后释放GIF流
-                if (_currentGifStream != null)
-                {
-                    _currentGifStream.Dispose();
-                    _currentGifStream = null;
-                    Logger.Debug("OnlineStickerManager", "GIF流已释放");
-                }
-                
-                Logger.Debug("OnlineStickerManager", "在线表情包已自动隐藏");
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("OnlineStickerManager", $"显示图片失败: {ex.Message}");
-                Logger.Debug("OnlineStickerManager", $"错误堆栈: {ex.StackTrace}");
-                throw;
-            }
+            Logger.Debug("OnlineStickerManager", $"开始显示图片，字节数: {imageBytes.Length}");
+            return _imageMgr.ShowStickerBytesAsync(imageBytes, DisplayDurationSeconds * 1000, interrupt, "在线表情包");
         }
 
         /// <summary>
@@ -572,8 +496,6 @@ namespace VPet.Plugin.LLMEP.Services
 
         public void Dispose()
         {
-            _currentGifStream?.Dispose();
-            _currentGifStream = null;
             _stickerService?.Dispose();
             Logger.Info("OnlineStickerManager", "在线表情包管理器已释放");
         }

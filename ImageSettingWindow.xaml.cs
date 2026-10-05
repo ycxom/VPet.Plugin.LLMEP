@@ -1,11 +1,15 @@
 using Panuon.WPF.UI;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using VPet.Plugin.LLMEP.EmotionAnalysis;
 using VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient;
@@ -25,8 +29,11 @@ namespace VPet.Plugin.LLMEP
 
         // 标签管理相关
         private LabelManager labelManager;
-        private Dictionary<string, List<ImageInfo>> scannedImages;
-        private ImageInfo currentSelectedImage;
+        private List<StickerListItem> allStickers = new List<StickerListItem>();
+        private StickerListItem editingItem;      // 标签文本框当前对应的图片（单选时）
+        private bool suppressSelectionEvents;     // 程序重建列表时不触发选中事件
+        private int scanGeneration;               // 新一轮扫描开始后，旧一轮的缩略图加载自行退出
+        private int previewGeneration;            // 快速切换时只显示最后一次选中的预览
 
         // AI图片标签生成服务
         private LLMImageTaggingService aiTaggingService;
@@ -69,7 +76,7 @@ namespace VPet.Plugin.LLMEP
             LoadSettings();
 
             // 启动后台异步扫描图片
-            _ = StartBackgroundImageScanAsync();
+            _ = RefreshImageListAsync("后台扫描完成");
 
             // 更新图片路径显示
             UpdateImagePath();
@@ -257,16 +264,7 @@ namespace VPet.Plugin.LLMEP
         {
             if (TextBlockImagePath != null)
             {
-                try
-                {
-                    string dllPath = imageMgr.LoaddllPath();
-                    string fullPath = Path.Combine(dllPath, "DIY_Expression");
-                    TextBlockImagePath.Text = fullPath;
-                }
-                catch
-                {
-                    TextBlockImagePath.Text = "DIY_Expression/";
-                }
+                TextBlockImagePath.Text = Utils.DiyStickerStorage.RootPath;
             }
         }
 
@@ -912,8 +910,8 @@ namespace VPet.Plugin.LLMEP
         {
             try
             {
-                string dllPath = imageMgr.LoaddllPath();
-                string expressionPath = Path.Combine(dllPath, "DIY_Expression");
+                // 目录在 文档\VPetLLM\Emotion，不存在就建出来再打开
+                string expressionPath = Utils.DiyStickerStorage.EnsureRoot();
 
                 if (Directory.Exists(expressionPath))
                 {
@@ -921,7 +919,7 @@ namespace VPet.Plugin.LLMEP
                 }
                 else
                 {
-                    MessageBox.Show("表情包目录不存在，请检查插件安装是否正确。", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show($"无法创建表情包目录：{expressionPath}", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
             }
             catch (Exception ex)
@@ -1125,15 +1123,13 @@ namespace VPet.Plugin.LLMEP
         {
             try
             {
-                // 使用ImageMgr的LoaddllPath方法获取正确的插件根目录
-                string pluginDir = imageMgr.LoaddllPath();
-                labelManager = new LabelManager(pluginDir);
+                // DIY 图片和标签都在 文档\VPetLLM\Emotion
+                Utils.DiyStickerStorage.EnsureRoot();
+                labelManager = new LabelManager();
                 labelManager.LoadLabels();
-                labelManager.CreateEmptyLabelFileIfNotExists();
-                labelManager.CreateExampleDirectories(); // 创建示例目录结构
 
-                scannedImages = new Dictionary<string, List<ImageInfo>>();
-                currentSelectedImage = null;
+                allStickers = new List<StickerListItem>();
+                editingItem = null;
 
                 Utils.Logger.Debug("LabelManager", "标签管理器初始化完成");
             }
@@ -1202,9 +1198,9 @@ namespace VPet.Plugin.LLMEP
                             TextBlockStatus.Text = e.IsCancelled ? "AI处理已取消" : "AI处理完成";
                         }
 
-                        // 刷新图片树以显示新标签
-                        scannedImages = labelManager.ScanImages();
-                        UpdateImageTree();
+                        // 刷新列表以显示新标签，并让桌宠用上新的心情设置
+                        _ = RefreshImageListAsync("AI处理后已刷新");
+                        imageMgr.ReloadStickerLibrary();
                     }));
                 };
                 aiTaggingService.ProcessingCompleted += aiCompletedHandler;
@@ -1299,248 +1295,415 @@ namespace VPet.Plugin.LLMEP
             }
         }
 
+        #region 表情包列表（单一文件夹 文档\VPetLLM\Emotion）
+
         /// <summary>
-        /// 启动后台异步扫描图片
+        /// 列表里的一张 DIY 表情包。缩略图在后台按 88px 解码后再填进来。
         /// </summary>
-        private async System.Threading.Tasks.Task StartBackgroundImageScanAsync()
+        public sealed class StickerListItem : INotifyPropertyChanged
         {
-            try
+            private ImageSource _thumbnail;
+            private string _moodSummary;
+
+            public ImageInfo Info { get; init; }
+            public string FileName => Info.FileName;
+
+            public string MoodSummary
             {
-                Utils.Logger.Debug("LabelManager", "启动后台异步扫描图片...");
-
-                // 在后台线程执行扫描
-                await System.Threading.Tasks.Task.Run(() =>
-                {
-                    try
-                    {
-                        // 扫描图片
-                        var images = labelManager.ScanImages();
-
-                        // 扫描完成后，回到UI线程更新
-                        Dispatcher.BeginInvoke(new System.Action(() =>
-                        {
-                            try
-                            {
-                                scannedImages = images;
-                                UpdateImageTree();
-
-                                int totalImages = scannedImages.Values.Sum(list => list.Count);
-                                if (TextBlockStatus != null)
-                                {
-                                    TextBlockStatus.Text = $"后台扫描完成，共 {totalImages} 张图片";
-                                }
-
-                                Utils.Logger.Info("LabelManager", $"后台异步扫描完成: {totalImages} 张图片，分布在 {scannedImages.Count} 个目录中");
-                            }
-                            catch (Exception ex)
-                            {
-                                Utils.Logger.Error("LabelManager", $"后台扫描更新UI失败: {ex.Message}");
-                            }
-                        }), System.Windows.Threading.DispatcherPriority.Background);
-                    }
-                    catch (Exception ex)
-                    {
-                        Utils.Logger.Error("LabelManager", $"后台扫描图片失败: {ex.Message}");
-
-                        // 回到UI线程显示错误
-                        Dispatcher.BeginInvoke(new System.Action(() =>
-                        {
-                            if (TextBlockStatus != null)
-                            {
-                                TextBlockStatus.Text = "后台扫描失败";
-                            }
-                        }), System.Windows.Threading.DispatcherPriority.Background);
-                    }
-                });
+                get => _moodSummary;
+                set { _moodSummary = value; OnChanged(); }
             }
-            catch (Exception ex)
+
+            public ImageSource Thumbnail
             {
-                Utils.Logger.Error("LabelManager", $"启动后台扫描失败: {ex.Message}");
+                get => _thumbnail;
+                set { _thumbnail = value; OnChanged(); }
             }
+
+            public event PropertyChangedEventHandler PropertyChanged;
+
+            private void OnChanged([CallerMemberName] string name = null) =>
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
 
+        /// <summary>心情复选框，按 LabelManager.MoodTags 的顺序。</summary>
+        private IEnumerable<CheckBox> MoodCheckBoxes =>
+            new[] { CheckBoxMoodHappy, CheckBoxMoodNormal, CheckBoxMoodPoor, CheckBoxMoodIll }.Where(cb => cb != null);
+
+        private List<StickerListItem> SelectedStickers =>
+            ListBoxImages?.SelectedItems.Cast<StickerListItem>().ToList() ?? new List<StickerListItem>();
+
         /// <summary>
-        /// 扫描图片按钮点击事件
+        /// 重新扫描目录并刷新列表；保持原来的选中项。扫描和缩略图解码都在后台。
         /// </summary>
-        private void ButtonScanImages_Click(object sender, RoutedEventArgs e)
+        private async System.Threading.Tasks.Task RefreshImageListAsync(string statusPrefix, IEnumerable<string> selectFileNames = null)
         {
+            if (labelManager == null || ListBoxImages == null)
+                return;
+
+            CommitTagsEdit();
+            int generation = ++scanGeneration;
+            if (TextBlockStatus != null) TextBlockStatus.Text = "正在扫描图片...";
+
+            List<ImageInfo> images;
             try
             {
-                if (TextBlockStatus != null) TextBlockStatus.Text = "正在扫描图片...";
-
-                // 扫描图片
-                scannedImages = labelManager.ScanImages();
-
-                // 更新UI
-                UpdateImageTree();
-
-                int totalImages = scannedImages.Values.Sum(list => list.Count);
-                if (TextBlockStatus != null) TextBlockStatus.Text = $"扫描完成，找到 {totalImages} 张图片，分布在 {scannedImages.Count} 个目录中";
-
-                Utils.Logger.Info("LabelManager", $"用户扫描图片完成: {totalImages} 张图片");
+                images = await System.Threading.Tasks.Task.Run(() => labelManager.ScanImages());
             }
             catch (Exception ex)
             {
                 if (TextBlockStatus != null) TextBlockStatus.Text = "扫描失败";
-                MessageBox.Show($"扫描图片失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
                 Utils.Logger.Error("LabelManager", $"扫描图片失败: {ex.Message}");
+                return;
             }
+
+            if (generation != scanGeneration)
+                return; // 期间又触发了一次刷新，以那次为准
+
+            var keepSelected = new HashSet<string>(
+                selectFileNames ?? SelectedStickers.Select(i => i.FileName), StringComparer.OrdinalIgnoreCase);
+
+            allStickers = images
+                .Select(info => new StickerListItem { Info = info, MoodSummary = BuildMoodSummary(info.RelativePath) })
+                .ToList();
+            ApplyMoodFilter(keepSelected);
+
+            if (TextBlockStatus != null)
+                TextBlockStatus.Text = $"{statusPrefix}，共 {allStickers.Count} 张表情包（{Utils.DiyStickerStorage.RootPath}）";
+            Utils.Logger.Info("LabelManager", $"{statusPrefix}: {allStickers.Count} 张图片");
+
+            _ = LoadThumbnailsAsync(allStickers, generation);
         }
 
         /// <summary>
-        /// 保存标签按钮点击事件
+        /// 按"按心情筛选"下拉框过滤列表。
         /// </summary>
-        private void ButtonSaveLabels_Click(object sender, RoutedEventArgs e)
+        private void ApplyMoodFilter(ISet<string> keepSelected)
+        {
+            if (ListBoxImages == null)
+                return;
+
+            var filter = (ComboBoxMoodFilter?.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "all";
+            IEnumerable<StickerListItem> items = allStickers;
+            if (filter == LabelManager.GeneralTag)
+                items = items.Where(i => labelManager.GetImageMoods(i.Info.RelativePath).Count == 0);
+            else if (filter != "all")
+                items = items.Where(i => labelManager.GetImageMoods(i.Info.RelativePath).Contains(filter));
+
+            suppressSelectionEvents = true;
+            try
+            {
+                var list = items.ToList();
+                ListBoxImages.ItemsSource = list;
+                if (keepSelected != null && keepSelected.Count > 0)
+                {
+                    foreach (var item in list.Where(i => keepSelected.Contains(i.FileName)))
+                        ListBoxImages.SelectedItems.Add(item);
+                    var first = list.FirstOrDefault(i => keepSelected.Contains(i.FileName));
+                    if (first != null)
+                        ListBoxImages.ScrollIntoView(first);
+                }
+            }
+            finally
+            {
+                suppressSelectionEvents = false;
+            }
+
+            UpdateDetailsPanel();
+        }
+
+        private string BuildMoodSummary(string relativePath)
+        {
+            var moods = labelManager.GetImageMoods(relativePath);
+            var summary = moods.Count == 0
+                ? "泛用（所有心情）"
+                : "心情: " + string.Join("、", moods.Select(LabelManager.MoodDisplayName));
+            var tagCount = labelManager.GetImageNormalTags(relativePath).Count;
+            return tagCount > 0 ? $"{summary} · {tagCount} 个标签" : summary;
+        }
+
+        /// <summary>
+        /// 后台解码缩略图（88px，冻结后交给 UI），不在 UI 线程上解大图。
+        /// </summary>
+        private async System.Threading.Tasks.Task LoadThumbnailsAsync(List<StickerListItem> items, int generation)
+        {
+            await System.Threading.Tasks.Task.Run(() =>
+            {
+                foreach (var item in items)
+                {
+                    if (generation != scanGeneration)
+                        return;
+
+                    var thumbnail = DecodeBitmap(item.Info.FullPath, 88);
+                    if (thumbnail == null)
+                        continue;
+
+                    Dispatcher.BeginInvoke(new Action(() => item.Thumbnail = thumbnail), DispatcherPriority.Background);
+                }
+            });
+        }
+
+        private static BitmapSource DecodeBitmap(string path, int decodeWidth)
         {
             try
             {
-                // 保存当前编辑的标签
-                SaveCurrentImageTags();
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.UriSource = new Uri(path);
+                bitmap.DecodePixelWidth = decodeWidth;
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
+                bitmap.EndInit();
+                bitmap.Freeze();
+                return bitmap;
+            }
+            catch
+            {
+                return null;
+            }
+        }
 
-                // 保存到文件
+        private void ListBoxImages_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (suppressSelectionEvents)
+                return;
+
+            // 先把上一张的标签编辑落盘，再切换
+            CommitTagsEdit();
+            UpdateDetailsPanel();
+        }
+
+        private void ComboBoxMoodFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (labelManager == null || ListBoxImages == null)
+                return;
+
+            CommitTagsEdit();
+            ApplyMoodFilter(new HashSet<string>(SelectedStickers.Select(i => i.FileName), StringComparer.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// 根据当前选中项刷新右侧面板。单选可编辑标签；多选时只批量设置心情。
+        /// </summary>
+        private void UpdateDetailsPanel()
+        {
+            var selected = SelectedStickers;
+            if (selected.Count == 0)
+            {
+                editingItem = null;
+                HideImageDetails();
+                return;
+            }
+
+            if (PanelImageDetails != null) PanelImageDetails.Visibility = Visibility.Visible;
+            if (PanelEmptyState != null) PanelEmptyState.Visibility = Visibility.Collapsed;
+
+            var primary = ListBoxImages.SelectedItem as StickerListItem ?? selected[0];
+
+            if (selected.Count == 1)
+            {
+                editingItem = primary;
+                if (TextBlockImageTitle != null) TextBlockImageTitle.Text = $"🖼️ {primary.FileName}";
+                if (TextBlockFileName != null) TextBlockFileName.Text = $"文件名: {primary.FileName}";
+                if (TextBlockFileSize != null) TextBlockFileSize.Text = $"大小: {primary.Info.FormattedSize}";
+                if (TextBoxImageTags != null)
+                {
+                    TextBoxImageTags.IsEnabled = true;
+                    TextBoxImageTags.Text = string.Join(", ", labelManager.GetImageNormalTags(primary.Info.RelativePath));
+                }
+                if (TextBlockTagsHint != null) TextBlockTagsHint.Text = "用逗号分隔多个标签，如：开心,笑脸,高兴（用于情感分析精确匹配）";
+                if (TextBlockStatus != null) TextBlockStatus.Text = $"正在编辑: {primary.FileName}";
+            }
+            else
+            {
+                editingItem = null;
+                if (TextBlockImageTitle != null) TextBlockImageTitle.Text = $"🖼️ 已选择 {selected.Count} 张表情包";
+                if (TextBlockFileName != null) TextBlockFileName.Text = "勾选或取消心情，会同时应用到所有选中的图片";
+                if (TextBlockFileSize != null) TextBlockFileSize.Text = "";
+                if (TextBoxImageTags != null)
+                {
+                    TextBoxImageTags.IsEnabled = false;
+                    TextBoxImageTags.Text = "";
+                }
+                if (TextBlockTagsHint != null) TextBlockTagsHint.Text = "多选时不能编辑标签，请单独选择一张图片";
+                if (TextBlockStatus != null) TextBlockStatus.Text = $"已选择 {selected.Count} 张表情包";
+            }
+
+            // 心情复选框：全部都有=勾，全部都没有=不勾，部分有=半选
+            foreach (var cb in MoodCheckBoxes)
+            {
+                var mood = cb.Tag?.ToString();
+                int count = selected.Count(i => labelManager.GetImageMoods(i.Info.RelativePath).Contains(mood));
+                cb.IsChecked = count == 0 ? false : count == selected.Count ? true : (bool?)null;
+            }
+
+            ShowPreview(primary);
+        }
+
+        /// <summary>
+        /// 预览图在后台按 480px 解码；先用缩略图占位，解完且仍是这张时再换上。
+        /// </summary>
+        private async void ShowPreview(StickerListItem item)
+        {
+            if (ImagePreview == null)
+                return;
+
+            int token = ++previewGeneration;
+            ImagePreview.Source = item.Thumbnail;
+
+            var preview = await System.Threading.Tasks.Task.Run(() => DecodeBitmap(item.Info.FullPath, 480));
+            if (token == previewGeneration && preview != null)
+                ImagePreview.Source = preview;
+        }
+
+        /// <summary>
+        /// 勾选/取消一个心情：应用到所有选中的图片，立即保存并让桌宠生效。
+        /// 用 Click 而不是 Checked/Unchecked：程序里设置 IsChecked 不会误触发保存。
+        /// </summary>
+        private void MoodCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not CheckBox cb || labelManager == null)
+                return;
+
+            var mood = cb.Tag?.ToString();
+            var selected = SelectedStickers;
+            if (string.IsNullOrEmpty(mood) || selected.Count == 0)
+                return;
+
+            bool enable = cb.IsChecked == true;
+            cb.IsChecked = enable; // 半选状态点一下就变成全选
+
+            foreach (var item in selected)
+            {
+                var moods = labelManager.GetImageMoods(item.Info.RelativePath);
+                if (enable && !moods.Contains(mood))
+                    moods.Add(mood);
+                else if (!enable)
+                    moods.Remove(mood);
+                labelManager.SetImageMoods(item.Info.RelativePath, moods);
+                item.MoodSummary = BuildMoodSummary(item.Info.RelativePath);
+            }
+
+            SaveLabelsAndApply(
+                $"已{(enable ? "设置" : "取消")}「{LabelManager.MoodDisplayName(mood)}」：{selected.Count} 张表情包");
+        }
+
+        /// <summary>
+        /// 把标签文本框的修改写回（切换选中、失去焦点、保存、关窗时调用）。没改动就什么也不做。
+        /// </summary>
+        private void CommitTagsEdit()
+        {
+            var item = editingItem;
+            if (item == null || TextBoxImageTags == null || !TextBoxImageTags.IsEnabled || labelManager == null)
+                return;
+
+            var newTags = (TextBoxImageTags.Text ?? "")
+                .Split(new[] { ',', '，', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(t => t.Trim())
+                .Where(t => t.Length > 0)
+                .Distinct()
+                .ToList();
+            var oldTags = labelManager.GetImageNormalTags(item.Info.RelativePath);
+
+            if (newTags.OrderBy(t => t).SequenceEqual(oldTags.OrderBy(t => t)))
+                return;
+
+            labelManager.SetImageNormalTags(item.Info.RelativePath, newTags);
+            item.MoodSummary = BuildMoodSummary(item.Info.RelativePath);
+            SaveLabelsAndApply($"已保存标签: {item.FileName}");
+        }
+
+        private void TextBoxImageTags_LostFocus(object sender, RoutedEventArgs e)
+        {
+            CommitTagsEdit();
+        }
+
+        /// <summary>
+        /// 写标签文件并让 ImageMgr 重新加载表情包库，改动立刻对桌宠生效。
+        /// </summary>
+        private bool SaveLabelsAndApply(string status)
+        {
+            try
+            {
                 labelManager.SaveLabels();
-
-                if (TextBlockStatus != null) TextBlockStatus.Text = "标签保存成功";
-                MessageBox.Show("标签已成功保存到文件！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
-
-                Utils.Logger.Info("LabelManager", "用户保存标签成功");
+                imageMgr.ReloadStickerLibrary();
+                if (TextBlockStatus != null) TextBlockStatus.Text = status;
+                return true;
             }
             catch (Exception ex)
             {
                 if (TextBlockStatus != null) TextBlockStatus.Text = "保存失败";
-                MessageBox.Show($"保存标签失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
                 Utils.Logger.Error("LabelManager", $"保存标签失败: {ex.Message}");
+                MessageBox.Show($"保存标签失败：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                return false;
             }
         }
 
         /// <summary>
-        /// 更新图片树视图
+        /// 刷新按钮
         /// </summary>
-        private void UpdateImageTree()
+        private async void ButtonScanImages_Click(object sender, RoutedEventArgs e)
         {
-            if (TreeViewImages == null) return;
+            await RefreshImageListAsync("刷新完成");
+        }
 
-            TreeViewImages.Items.Clear();
-
-            if (scannedImages.Count == 0)
+        /// <summary>
+        /// 保存按钮：标签和心情本来就是改完即存，这里兜底把文本框里未提交的修改写进去。
+        /// </summary>
+        private void ButtonSaveLabels_Click(object sender, RoutedEventArgs e)
+        {
+            CommitTagsEdit();
+            if (SaveLabelsAndApply("标签保存成功"))
             {
+                MessageBox.Show("标签已成功保存到文件！", "成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                Utils.Logger.Info("LabelManager", "用户保存标签成功");
+            }
+        }
+
+        /// <summary>
+        /// 导入图片：复制进 文档\VPetLLM\Emotion，导入后默认是泛用，选中它们方便直接勾心情。
+        /// </summary>
+        private async void ButtonImportImages_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "选择要导入的表情包",
+                Filter = "表情包图片|*.png;*.gif;*.jpg;*.jpeg;*.bmp|所有文件|*.*",
+                Multiselect = true
+            };
+            if (dialog.ShowDialog(this) != true)
                 return;
-            }
 
-            foreach (var directory in scannedImages.Keys.OrderBy(k => k))
+            var imported = new List<string>();
+            var failed = new List<string>();
+            foreach (var file in dialog.FileNames)
             {
-                var dirItem = new TreeViewItem
+                if (!Utils.DiyStickerStorage.IsImageFile(file))
                 {
-                    Header = $"📁 {directory} ({scannedImages[directory].Count})",
-                    Tag = directory,
-                    IsExpanded = true
-                };
-
-                foreach (var image in scannedImages[directory].OrderBy(img => img.FileName))
-                {
-                    var imageItem = new TreeViewItem
-                    {
-                        Header = $"🖼️ {image.FileName}",
-                        Tag = image
-                    };
-
-                    dirItem.Items.Add(imageItem);
+                    failed.Add($"{Path.GetFileName(file)}（不支持的格式）");
+                    continue;
                 }
-
-                TreeViewImages.Items.Add(dirItem);
-            }
-        }
-
-        /// <summary>
-        /// 图片树选择变化事件
-        /// </summary>
-        private void TreeViewImages_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
-        {
-            try
-            {
-                if (e.NewValue is TreeViewItem selectedItem && selectedItem.Tag is ImageInfo imageInfo)
+                try
                 {
-                    // 保存之前选中图片的标签
-                    SaveCurrentImageTags();
-
-                    // 显示新选中的图片
-                    ShowImageDetails(imageInfo);
-                    currentSelectedImage = imageInfo;
+                    imported.Add(Utils.DiyStickerStorage.Import(file));
                 }
-                else
+                catch (Exception ex)
                 {
-                    // 选中的是目录或其他项
-                    HideImageDetails();
-                    currentSelectedImage = null;
+                    failed.Add($"{Path.GetFileName(file)}（{ex.Message}）");
                 }
             }
-            catch (Exception ex)
+
+            if (imported.Count > 0)
             {
-                Utils.Logger.Error("LabelManager", $"选择图片时发生错误: {ex.Message}");
+                // 回到"全部"，否则新导入的泛用图可能被当前筛选藏起来
+                if (ComboBoxMoodFilter != null) ComboBoxMoodFilter.SelectedIndex = 0;
+                await RefreshImageListAsync($"已导入 {imported.Count} 张，默认为泛用，可在右侧勾选心情", imported);
+                imageMgr.ReloadStickerLibrary();
             }
-        }
 
-        /// <summary>
-        /// 显示图片详情
-        /// </summary>
-        private void ShowImageDetails(ImageInfo imageInfo)
-        {
-            try
+            if (failed.Count > 0)
             {
-                // 更新标题
-                if (TextBlockImageTitle != null) TextBlockImageTitle.Text = $"🖼️ {imageInfo.FileName}";
-
-                // 显示图片预览
-                if (ImagePreview != null)
-                {
-                    var bitmap = new System.Windows.Media.Imaging.BitmapImage();
-                    bitmap.BeginInit();
-                    bitmap.UriSource = new Uri(imageInfo.FullPath);
-                    bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
-                    bitmap.EndInit();
-                    ImagePreview.Source = bitmap;
-                }
-
-                // 显示文件信息
-                if (TextBlockFileName != null) TextBlockFileName.Text = $"文件名: {imageInfo.FileName}\n路径: {imageInfo.RelativePath}";
-                if (TextBlockFileSize != null) TextBlockFileSize.Text = $"大小: {imageInfo.FormattedSize}";
-
-                // 显示标签
-                if (TextBoxImageTags != null)
-                {
-                    var tags = labelManager.GetImageTags(imageInfo.RelativePath);
-                    // 分离心情标签和普通标签
-                    var emotionTags = new[] { "general", "happy", "normal", "poor", "ill" };
-                    var normalTags = tags.Where(tag => !emotionTags.Contains(tag.ToLower())).ToList();
-                    var emotionTag = tags.FirstOrDefault(tag => emotionTags.Contains(tag.ToLower()));
-
-                    TextBoxImageTags.Text = string.Join(", ", normalTags);
-
-                    // 设置心情选择
-                    if (ComboBoxEmotion != null)
-                    {
-                        var selectedIndex = emotionTag?.ToLower() switch
-                        {
-                            "happy" => 1,
-                            "normal" => 2,
-                            "poor" => 3,
-                            "ill" => 4,
-                            _ => 0 // general 或未设置
-                        };
-                        ComboBoxEmotion.SelectedIndex = selectedIndex;
-                    }
-                }
-
-                // 显示详情面板
-                if (PanelImageDetails != null) PanelImageDetails.Visibility = Visibility.Visible;
-                if (PanelEmptyState != null) PanelEmptyState.Visibility = Visibility.Collapsed;
-
-                if (TextBlockStatus != null) TextBlockStatus.Text = $"正在编辑: {imageInfo.FileName}";
-            }
-            catch (Exception ex)
-            {
-                Utils.Logger.Error("LabelManager", $"显示图片详情失败: {ex.Message}");
-                MessageBox.Show($"无法显示图片：{ex.Message}", "错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("以下文件未能导入：\n" + string.Join("\n", failed), "导入", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -1552,76 +1715,16 @@ namespace VPet.Plugin.LLMEP
             if (PanelImageDetails != null) PanelImageDetails.Visibility = Visibility.Collapsed;
             if (PanelEmptyState != null) PanelEmptyState.Visibility = Visibility.Visible;
             if (TextBlockImageTitle != null) TextBlockImageTitle.Text = "🖼️ 选择图片查看预览";
-            if (TextBlockStatus != null) TextBlockStatus.Text = "准备就绪";
+            if (ImagePreview != null) ImagePreview.Source = null;
         }
 
-        /// <summary>
-        /// 保存当前图片的标签
-        /// </summary>
-        private void SaveCurrentImageTags()
-        {
-            if (currentSelectedImage != null)
-            {
-                try
-                {
-                    var allTags = new List<string>();
-
-                    // 添加普通标签
-                    if (TextBoxImageTags != null && !string.IsNullOrEmpty(TextBoxImageTags.Text))
-                    {
-                        var tagsText = TextBoxImageTags.Text.Trim();
-                        var normalTags = tagsText.Split(new char[] { ',', '，' }, StringSplitOptions.RemoveEmptyEntries)
-                                               .Select(tag => tag.Trim())
-                                               .Where(tag => !string.IsNullOrEmpty(tag))
-                                               .ToList();
-                        allTags.AddRange(normalTags);
-                    }
-
-                    // 添加心情标签
-                    if (ComboBoxEmotion != null && ComboBoxEmotion.SelectedItem is ComboBoxItem selectedItem)
-                    {
-                        var emotionTag = selectedItem.Tag?.ToString();
-                        if (!string.IsNullOrEmpty(emotionTag) && emotionTag != "general")
-                        {
-                            allTags.Add(emotionTag);
-                        }
-                    }
-
-                    labelManager.SetImageTags(currentSelectedImage.RelativePath, allTags);
-                    currentSelectedImage.Tags = allTags;
-
-                    Utils.Logger.Debug("LabelManager", $"保存图片标签: {currentSelectedImage.FileName} -> [{string.Join(", ", allTags)}]");
-                }
-                catch (Exception ex)
-                {
-                    Utils.Logger.Error("LabelManager", $"保存当前图片标签失败: {ex.Message}");
-                }
-            }
-        }
-
-        /// <summary>
-        /// 心情选择变化事件
-        /// </summary>
-        private void ComboBoxEmotion_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            // 当心情选择变化时，自动保存
-            if (currentSelectedImage != null)
-            {
-                SaveCurrentImageTags();
-            }
-        }
-
-        /// <summary>
-        /// 图片标签文本变化事件
-        /// </summary>
-        private void TextBoxImageTags_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            // 实时保存标签变化（可选）
-            // 这里可以添加防抖逻辑，避免频繁保存
-        }
+        #endregion
 
         protected override void OnClosed(EventArgs e)
         {
+            // 标签文本框里还没失焦的修改，关窗时也要落盘
+            CommitTagsEdit();
+
             base.OnClosed(e);
 
             // 停止定时器

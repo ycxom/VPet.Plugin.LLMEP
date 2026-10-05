@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
-using System.Windows.Media.Imaging;
+using VPet.Plugin.LLMEP.Utils;
 using VPet_Simulator.Core;
 using VPet_Simulator.Windows.Interface;
 
@@ -62,13 +62,8 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 // 读取DIY表情包标签
                 if (_imageMgr.Settings.EnableDIYImages)
                 {
-                    // 新的DIY标签系统
-                    string diyLabelPath = Path.Combine(dllPath, "plugin", "data", "diy_labels.json");
-                    ExtractTagsFromDIYLabelFile(diyLabelPath, allTags);
-
-                    // 兼容旧的DIY标签系统
-                    string oldDiyLabelPath = Path.Combine(dllPath, "DIY_Expression", "label.json");
-                    ExtractTagsFromLabelFile(oldDiyLabelPath, allTags);
+                    // DIY标签（旧格式 label.json 已在启动迁移时并入 diy_labels.json）
+                    ExtractTagsFromDIYLabelFile(DiyStickerStorage.LabelsFilePath, allTags);
                 }
 
                 if (allTags.Count > 0)
@@ -185,9 +180,9 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                             {
                                 if (!string.IsNullOrWhiteSpace(label))
                                 {
-                                    // 过滤掉心情标签，只保留普通标签用于LLM匹配
-                                    var emotionTags = new[] { "general", "happy", "normal", "poor", "ill" };
-                                    if (!emotionTags.Contains(label.ToLower()))
+                                    // 过滤掉心情标签和保留标签（general、__llm_processed__），只保留普通标签用于LLM匹配。
+                                    // 以前 AI 处理标记会混进给模型的候选标签里
+                                    if (!LabelManager.IsMoodTag(label) && !LabelManager.IsReservedTag(label))
                                     {
                                         allTags.Add(label.Trim());
                                         tagCount++;
@@ -267,11 +262,11 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
         /// </summary>
         /// <param name="text">要分析的文本</param>
         /// <returns>匹配的图片，如果没有匹配则返回null</returns>
-        public async Task<BitmapImage> AnalyzeEmotionAndGetImageAsync(string text)
+        public async Task<string> AnalyzeEmotionAndGetImagePathAsync(string text)
         {
             try
             {
-                _imageMgr.LogDebug("EmotionAnalyzer", "=== AnalyzeEmotionAndGetImageAsync 开始 ===");
+                _imageMgr.LogDebug("EmotionAnalyzer", "=== AnalyzeEmotionAndGetImagePathAsync 开始 ===");
                 _imageMgr.LogDebug("EmotionAnalyzer", $"接收到文本: {text}");
                 _imageMgr.LogDebug("EmotionAnalyzer", $"精确匹配设置: {_imageMgr.Settings.UseAccurateImageMatching}");
 
@@ -311,7 +306,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                         var labelMatcher = _imageMgr.GetLabelImageMatcher();
                         if (labelMatcher != null)
                         {
-                            var matchedImage = labelMatcher.MatchImageByTags(emotionTags);
+                            var matchedImage = labelMatcher.MatchImagePathByTags(emotionTags);
                             if (matchedImage != null)
                             {
                                 Utils.Logger.Debug("EmotionAnalyzer", "标签匹配成功，返回匹配的图片");
@@ -393,7 +388,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 // 降级方案：使用传统的心情匹配
                 var currentMode = _mainWindow.Core.Save.CalMode();
                 Utils.Logger.Debug("EmotionAnalyzer", $"使用传统心情匹配，当前心情: {currentMode}");
-                return _imageMgr.GetCurrentMoodImagePublic();
+                return _imageMgr.GetCurrentMoodImagePath();
             }
             catch (Exception ex)
             {
@@ -428,7 +423,8 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 Utils.Logger.Debug("EmotionAnalyzer", $"在线表情包搜索: 主要情感={primaryEmotion}, 附加标签=[{string.Join(", ", additionalTags)}]");
 
                 // 搜索并显示在线表情包
-                bool success = await onlineStickerManager.SearchAndDisplayStickerAsync(primaryEmotion, additionalTags);
+                // 情感分析是自动触发：已有表情包在显示就不去打断它
+                bool success = await onlineStickerManager.SearchAndDisplayStickerAsync(primaryEmotion, additionalTags, interrupt: false);
 
                 if (success)
                 {
@@ -582,7 +578,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
         /// <summary>
         /// 通过向量匹配获取图片
         /// </summary>
-        private async Task<BitmapImage> GetImageByVectorMatchingAsync(List<string> emotions)
+        private async Task<string> GetImageByVectorMatchingAsync(List<string> emotions)
         {
             try
             {
@@ -609,16 +605,8 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                     var imagePath = _imageMgr.GetImagePath(selectedFilename);
                     if (!string.IsNullOrEmpty(imagePath))
                     {
-                        var image = _imageMgr.LoadImageFromPath(imagePath);
-                        if (image != null)
-                        {
-                            Utils.Logger.Debug("EmotionAnalyzer", $"向量匹配图片加载成功: {selectedFilename}");
-                            return image;
-                        }
-                        else
-                        {
-                            Utils.Logger.Warning("EmotionAnalyzer", $"向量匹配图片加载失败: {selectedFilename}");
-                        }
+                        Utils.Logger.Debug("EmotionAnalyzer", $"向量匹配图片: {selectedFilename}");
+                        return imagePath;
                     }
                     else
                     {
@@ -654,11 +642,11 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 ExtractTagsFromLabelFile(builtInLabelPath, allTags);
             }
 
-            // 读取DIY表情包标签
+            // 读取DIY表情包标签（新旧两种格式都认，和 BuildImageTagsPrompt 给模型的候选一致；
+            // 以前这里只读旧 label.json，标签管理面板打的标签会被当成无效标签丢掉）
             if (_imageMgr.Settings.EnableDIYImages)
             {
-                string diyLabelPath = Path.Combine(dllPath, "DIY_Expression", "label.json");
-                ExtractTagsFromLabelFile(diyLabelPath, allTags);
+                ExtractTagsFromDIYLabelFile(DiyStickerStorage.LabelsFilePath, allTags);
             }
 
             return allTags;

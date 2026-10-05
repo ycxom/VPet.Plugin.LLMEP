@@ -76,8 +76,7 @@ namespace VPet.Plugin.LLMEP.Services
                 Utils.Logger.Info("LLMImageTagging", "开始AI图片标签生成处理");
 
                 // 扫描所有图片
-                var images = _labelManager.ScanImages();
-                var allImages = images.Values.SelectMany(list => list).ToList();
+                var allImages = _labelManager.ScanImages();
 
                 // 过滤出未处理的图片
                 var unprocessedImages = allImages.Where(img => !IsImageProcessedByLLM(img.RelativePath)).ToList();
@@ -112,14 +111,18 @@ namespace VPet.Plugin.LLMEP.Services
 
                         if (result != null)
                         {
-                            // 保存标签
-                            var tags = new List<string>(result.Tags);
-                            if (!string.IsNullOrEmpty(result.Emotion) && result.Emotion != "general")
-                            {
-                                tags.Add(result.Emotion);
-                            }
+                            // 保存标签：与已有标签合并，不覆盖。用户已经在界面上勾过心情的，以用户为准；
+                            // 没勾过的才采用 AI 判断的心情
+                            var normalTags = _labelManager.GetImageNormalTags(image.RelativePath)
+                                .Concat(result.Tags ?? new List<string>());
+                            _labelManager.SetImageNormalTags(image.RelativePath, normalTags);
 
-                            _labelManager.SetImageTags(image.RelativePath, tags);
+                            if (_labelManager.GetImageMoods(image.RelativePath).Count == 0
+                                && LabelManager.IsMoodTag(result.Emotion))
+                            {
+                                _labelManager.SetImageMoods(image.RelativePath, new[] { result.Emotion });
+                            }
+                            var tags = _labelManager.GetImageTags(image.RelativePath);
 
                             // 标记为已处理
                             MarkImageAsProcessedByLLM(image.RelativePath);
@@ -158,8 +161,16 @@ namespace VPet.Plugin.LLMEP.Services
                     }
                 }
 
-                // 保存所有标签（取消时同样要保存，已处理的那部分不该白跑）
-                _labelManager.SaveLabels();
+                // 保存所有标签（取消时同样要保存，已处理的那部分不该白跑）。
+                // 保存失败也要往下走：不发完成通知，界面会一直停在"处理中"
+                try
+                {
+                    _labelManager.SaveLabels();
+                }
+                catch (Exception saveEx)
+                {
+                    Utils.Logger.Error("LLMImageTagging", $"保存标签失败: {saveEx.Message}");
+                }
 
                 Utils.Logger.Info("LLMImageTagging",
                     cancelled

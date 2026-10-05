@@ -144,6 +144,13 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 }
                 else
                 {
+                    // 已有表情包在显示：分析出来也会被丢掉，别白花一次 LLM 调用
+                    if (_imageMgr.IsStickerBusy)
+                    {
+                        _imageMgr.LogDebug("SpeechCapturer", "已有表情包在显示，跳过本句情感分析");
+                        return;
+                    }
+
                     // 气泡触发禁用时，直接进行情感分析并显示图片
                     _imageMgr.LogDebug("SpeechCapturer", "气泡触发已禁用，直接进行情感分析");
                     _ = ProcessSpeechAsync(text);

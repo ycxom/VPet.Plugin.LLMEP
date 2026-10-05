@@ -6,29 +6,35 @@
              VerticalAlignment="Top"
              Margin="10">
     <!-- Telegram 风格的聊天气泡 -->
-    <Border Background="White"
-            CornerRadius="12"
-            Padding="8"
-            MaxWidth="200"
-            MaxHeight="200">
-        <Border.Effect>
-            <DropShadowEffect Color="Black"
-                            Opacity="0.2"
-                            BlurRadius="10"
-                            ShadowDepth="2"
-                            Direction="270"/>
-        </Border.Effect>
+    <Grid MaxWidth="200" MaxHeight="200">
+        <!-- 阴影单独一层并缓存成位图：GIF 每换一帧只重绘图片区域，不必每帧重算模糊 -->
+        <Border Background="White" CornerRadius="12">
+            <Border.Effect>
+                <DropShadowEffect Color="Black"
+                                Opacity="0.2"
+                                BlurRadius="10"
+                                ShadowDepth="2"
+                                Direction="270"/>
+            </Border.Effect>
+            <Border.CacheMode>
+                <BitmapCache />
+            </Border.CacheMode>
+        </Border>
 
-        <Border.ContextMenu>
-            <ContextMenu>
-                <MenuItem Header="复制图片" Click="CopyImage_Click" />
-                <MenuItem Header="下载图片" Click="DownloadImage_Click" />
-                <Separator />
-                <MenuItem Header="关闭" Click="Close_Click" />
-            </ContextMenu>
-        </Border.ContextMenu>
+        <Border Background="White"
+                CornerRadius="12"
+                Padding="8">
+            <Border.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="复制图片" Click="CopyImage_Click" />
+                    <MenuItem Header="下载图片" Click="DownloadImage_Click" />
+                    <Separator />
+                    <MenuItem Header="关闭" Click="Close_Click" />
+                </ContextMenu>
+            </Border.ContextMenu>
 
-        <Image x:Name="Image"
-               Stretch="Uniform" />
-    </Border>
+            <Image x:Name="Image"
+                   Stretch="Uniform" />
+        </Border>
+    </Grid>
 </UserControl>

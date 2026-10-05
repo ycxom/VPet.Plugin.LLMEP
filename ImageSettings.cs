@@ -21,7 +21,7 @@ namespace VPet.Plugin.LLMEP
         public bool EnableBuiltInImages { get; set; } = true;
 
         /// <summary>
-        /// 是否启用DIY表情包（DIY_Expression文件夹）
+        /// 是否启用DIY表情包（文档\VPetLLM\Emotion 文件夹）
         /// </summary>
         public bool EnableDIYImages { get; set; } = true;
 

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Windows.Media.Imaging;
+using VPet.Plugin.LLMEP.Utils;
 
 namespace VPet.Plugin.LLMEP
 {
@@ -14,14 +14,16 @@ namespace VPet.Plugin.LLMEP
     {
         private readonly ImageMgr _imageMgr;
         private Dictionary<string, List<string>> _imageLabels; // filename -> labels
-        private Dictionary<string, BitmapImage> _imageCache; // filename -> BitmapImage
+        // filename -> 完整路径。只记路径，显示时再由 ImageMgr 在后台按显示尺寸解码；
+        // 以前这里把带标签的图全部按原尺寸解码常驻，而且是在线程池上建的 BitmapImage，拿到 UI 线程就抛跨线程异常
+        private Dictionary<string, string> _imagePaths;
         private Random _random;
 
         public LabelImageMatcher(ImageMgr imageMgr)
         {
             _imageMgr = imageMgr;
             _imageLabels = new Dictionary<string, List<string>>();
-            _imageCache = new Dictionary<string, BitmapImage>();
+            _imagePaths = new Dictionary<string, string>();
             _random = new Random();
         }
 
@@ -33,7 +35,7 @@ namespace VPet.Plugin.LLMEP
             try
             {
                 _imageLabels.Clear();
-                _imageCache.Clear();
+                _imagePaths.Clear();
 
                 string dllPath = _imageMgr.LoaddllPath();
 
@@ -48,14 +50,9 @@ namespace VPet.Plugin.LLMEP
                 // 加载DIY表情包标签
                 if (_imageMgr.Settings.EnableDIYImages)
                 {
-                    // 新的标签系统：从 plugin/data/diy_labels.json 加载
-                    string diyLabelPath = Path.Combine(dllPath, "plugin", "data", "diy_labels.json");
-                    string diyImagePath = Path.Combine(dllPath, "DIY_Expression");
-                    LoadDIYLabelsFromFile(diyLabelPath, diyImagePath);
-
-                    // 兼容旧的标签系统：从 DIY_Expression/label.json 加载
-                    string oldDiyLabelPath = Path.Combine(dllPath, "DIY_Expression", "label.json");
-                    LoadLabelsFromFile(oldDiyLabelPath, diyImagePath);
+                    // DIY 图片与标签统一在 文档\VPetLLM\Emotion\
+                    string diyImagePath = DiyStickerStorage.RootPath;
+                    LoadDIYLabelsFromFile(DiyStickerStorage.LabelsFilePath, diyImagePath);
                 }
 
                 _imageMgr.LogDebug("LabelMatcher", $"已加载 {_imageLabels.Count} 个图片的标签信息");
@@ -119,24 +116,10 @@ namespace VPet.Plugin.LLMEP
                     // 存储标签信息
                     _imageLabels[imageInfo.Filename] = imageInfo.Labels.ToList();
 
-                    // 预加载图片
                     string fullImagePath = Path.Combine(imageBasePath, imageInfo.Filename);
                     if (File.Exists(fullImagePath))
                     {
-                        try
-                        {
-                            var bitmapImage = new BitmapImage();
-                            bitmapImage.BeginInit();
-                            bitmapImage.UriSource = new Uri(fullImagePath, UriKind.Absolute);
-                            bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                            bitmapImage.EndInit();
-
-                            _imageCache[imageInfo.Filename] = bitmapImage;
-                        }
-                        catch (Exception ex)
-                        {
-                            _imageMgr.LogWarning("LabelMatcher", $"预加载图片失败: {fullImagePath}, 错误: {ex.Message}");
-                        }
+                        _imagePaths[imageInfo.Filename] = fullImagePath;
                     }
                 }
 
@@ -185,6 +168,8 @@ namespace VPet.Plugin.LLMEP
                     string relativePath = kvp.Key;
                     List<string> tags = kvp.Value;
 
+                    // 保留标签（general、AI 处理标记）不表达语义，不参与匹配
+                    tags = tags?.Where(t => !LabelManager.IsReservedTag(t)).ToList();
                     if (string.IsNullOrEmpty(relativePath) || tags == null || tags.Count == 0)
                         continue;
 
@@ -200,24 +185,10 @@ namespace VPet.Plugin.LLMEP
                         string cacheKey = $"diy_{filename}"; // 添加前缀避免与内置图片冲突
                         _imageLabels[cacheKey] = tags.ToList();
 
-                        // 预加载图片
-                        try
-                        {
-                            var bitmapImage = new BitmapImage();
-                            bitmapImage.BeginInit();
-                            bitmapImage.UriSource = new Uri(fullImagePath, UriKind.Absolute);
-                            bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                            bitmapImage.EndInit();
+                        _imagePaths[cacheKey] = fullImagePath;
+                        loadedCount++;
 
-                            _imageCache[cacheKey] = bitmapImage;
-                            loadedCount++;
-
-                            _imageMgr.LogDebug("LabelMatcher", $"加载DIY图片: {relativePath} -> 标签: [{string.Join(", ", tags)}]");
-                        }
-                        catch (Exception ex)
-                        {
-                            _imageMgr.LogWarning("LabelMatcher", $"预加载DIY图片失败: {fullImagePath}, 错误: {ex.Message}");
-                        }
+                        _imageMgr.LogDebug("LabelMatcher", $"加载DIY图片: {relativePath} -> 标签: [{string.Join(", ", tags)}]");
                     }
                     else
                     {
@@ -237,8 +208,8 @@ namespace VPet.Plugin.LLMEP
         /// 根据标签匹配图片
         /// </summary>
         /// <param name="targetTags">目标标签列表</param>
-        /// <returns>匹配的图片，如果没有匹配则返回null</returns>
-        public BitmapImage MatchImageByTags(List<string> targetTags)
+        /// <returns>匹配图片的完整路径，如果没有匹配则返回null</returns>
+        public string MatchImagePathByTags(List<string> targetTags)
         {
             try
             {
@@ -293,10 +264,10 @@ namespace VPet.Plugin.LLMEP
                 string selectedFilename = matchedImages[_random.Next(matchedImages.Count)];
                 _imageMgr.LogInfo("LabelMatcher", $"从 {matchedImages.Count} 个匹配图片中随机选择: {selectedFilename}");
 
-                // 返回图片
-                if (_imageCache.TryGetValue(selectedFilename, out BitmapImage image))
+                // 返回图片路径
+                if (_imagePaths.TryGetValue(selectedFilename, out string imagePath))
                 {
-                    return image;
+                    return imagePath;
                 }
                 else
                 {

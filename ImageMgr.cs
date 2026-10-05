@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -14,7 +16,6 @@ using VPet.Plugin.LLMEP.Services;
 using VPet.Plugin.LLMEP.Utils;
 using VPet_Simulator.Core;
 using VPet_Simulator.Windows.Interface;
-using WpfAnimatedGif;
 
 namespace VPet.Plugin.LLMEP
 {
@@ -25,7 +26,8 @@ namespace VPet.Plugin.LLMEP
         private DispatcherTimer timer;
         private Random random;
         private ImageUI image;
-        private Dictionary<IGameSave.ModeType, List<BitmapImage>> imagepath;
+        // 只存路径；LoadImgae 整体替换，后台线程读到的总是一份完整的库
+        private volatile Dictionary<IGameSave.ModeType, List<string>> imagepath;
         private MenuItem menuItem;
         private ImageSettings settings;
         private string settingsPath;
@@ -73,7 +75,7 @@ namespace VPet.Plugin.LLMEP
         public ImageMgr(IMainWindow mainwin) : base(mainwin)
         {
             random = new Random();
-            imagepath = new Dictionary<IGameSave.ModeType, List<BitmapImage>>();
+            imagepath = new Dictionary<IGameSave.ModeType, List<string>>();
 
             // 官方服务（在线表情包 / Free 模型）的鉴权通道：身份与加解密都在
             // 本 MOD 自带的 VPetLLM.SecureCommunication.dll 里完成。
@@ -121,6 +123,9 @@ namespace VPet.Plugin.LLMEP
 
                 // 迁移旧的数据文件到新目录
                 MigrateOldDataFiles();
+
+                // DIY 表情包从 MOD 目录迁到 文档\VPetLLM\Emotion\（一次性；工坊目录会被 Steam 更新覆盖）
+                DiyStickerStorage.Migrate(LoaddllPath());
 
                 Utils.Logger.Info("Plugin", "开始加载插件");
 
@@ -432,7 +437,7 @@ namespace VPet.Plugin.LLMEP
                 CleanupOnlineStickerManager();
 
                 // 隐藏图片
-                HideImage();
+                HideCurrentSticker();
 
                 LogMessage("插件卸载完成");
             }
@@ -707,11 +712,18 @@ namespace VPet.Plugin.LLMEP
             }
         }
 
+        /// <summary>
+        /// 扫描表情包库，只记文件路径不解码。
+        ///
+        /// 以前在 UI 线程上把整库按原尺寸解码常驻（内置 129 张 ≈ 233MB，最大一张 2328×2195），
+        /// 既拖慢加载又挤占 VPet 动画加载的内存余量（宿主在工作集超阈值时会暂停加载动画）。
+        /// 现在显示哪张才在后台按显示尺寸解哪张。
+        /// </summary>
         private void LoadImgae()
         {
             try
             {
-                imagepath.Clear();
+                var library = new Dictionary<IGameSave.ModeType, List<string>>();
 
                 string[] supportedFormats = { "*.png", "*.jpg", "*.gif", "*.jpeg" };
                 string dllpath = LoaddllPath();
@@ -724,60 +736,15 @@ namespace VPet.Plugin.LLMEP
                     string builtInPath = Path.Combine(dllpath, "VPet_Expression");
                     LogMessage($"开始加载内置表情包: {builtInPath}");
 
-                    // 从根目录加载所有图片，并添加到所有心情类别
                     if (Directory.Exists(builtInPath))
                     {
-                        var builtInImages = new List<BitmapImage>();
-                        var allFiles = new List<string>();
+                        var builtInImages = CollectImageFiles(builtInPath, supportedFormats);
 
-                        // 收集所有支持格式的文件
-                        foreach (string format in supportedFormats)
-                        {
-                            try
-                            {
-                                allFiles.AddRange(Directory.GetFiles(builtInPath, format, SearchOption.TopDirectoryOnly));
-                            }
-                            catch
-                            {
-                                // 忽略单个格式搜索的错误
-                            }
-                        }
-
-                        // 加载每个图片文件
-                        foreach (string filePath in allFiles)
-                        {
-                            // 跳过 info.lps 和 label.txt 等非图片文件
-                            string fileName = Path.GetFileName(filePath).ToLower();
-                            if (fileName == "info.lps" || fileName == "label.txt")
-                                continue;
-
-                            try
-                            {
-                                var bitmapImage = new BitmapImage();
-                                bitmapImage.BeginInit();
-                                bitmapImage.UriSource = new Uri(filePath, UriKind.Absolute);
-                                bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                                bitmapImage.EndInit();
-
-                                builtInImages.Add(bitmapImage);
-                            }
-                            catch (Exception ex)
-                            {
-                                if (settings.DebugMode)
-                                    LogMessage($"无法加载图片: {filePath}, 错误: {ex.Message}");
-                            }
-                        }
-
-                        // 将内置图片添加到所有心情类别
                         if (builtInImages.Count > 0)
                         {
                             foreach (IGameSave.ModeType modeType in Enum.GetValues(typeof(IGameSave.ModeType)))
                             {
-                                if (!imagepath.ContainsKey(modeType))
-                                {
-                                    imagepath[modeType] = new List<BitmapImage>();
-                                }
-                                imagepath[modeType].AddRange(builtInImages);
+                                AddToLibrary(library, modeType, builtInImages);
                             }
                             LogMessage($"内置表情包加载完成: {builtInImages.Count} 张图片（适用于所有心情）");
                         }
@@ -796,36 +763,27 @@ namespace VPet.Plugin.LLMEP
                     LogMessage("内置表情包已禁用");
                 }
 
-                // 加载DIY表情包（DIY_Expression）
-                // 支持两种模式：传统的心情子文件夹结构 + 新的标签系统
+                // 加载DIY表情包（文档\VPetLLM\Emotion，单层目录，心情由标签决定）
                 if (settings.EnableDIYImages)
                 {
-                    string diyPath = Path.Combine(dllpath, "DIY_Expression");
-                    LogMessage($"开始加载DIY表情包: {diyPath}");
-
-                    // 传统的心情子文件夹结构（向后兼容）
-                    LoadImagesFromDirectory(Path.Combine(diyPath, "Normal"), IGameSave.ModeType.Nomal, supportedFormats);
-                    LoadImagesFromDirectory(Path.Combine(diyPath, "Happy"), IGameSave.ModeType.Happy, supportedFormats);
-                    LoadImagesFromDirectory(Path.Combine(diyPath, "PoorCondition"), IGameSave.ModeType.PoorCondition, supportedFormats);
-                    LoadImagesFromDirectory(Path.Combine(diyPath, "Ill"), IGameSave.ModeType.Ill, supportedFormats);
-
-                    // 新的标签系统：从所有子目录加载图片并根据标签分类
-                    LoadImagesWithTagSystem(diyPath, supportedFormats);
+                    LoadDiyImages(library);
                 }
                 else
                 {
                     LogMessage("DIY表情包已禁用");
                 }
 
-                // 统计加载结果
+                // 整体替换：后台线程上的 PickStickerPath 只会看到完整的旧库或完整的新库
+                imagepath = library;
+
                 int totalImages = 0;
-                foreach (var kvp in imagepath)
+                foreach (var kvp in library)
                 {
                     totalImages += kvp.Value.Count;
                     LogMessage($"{kvp.Key} 心情: {kvp.Value.Count} 张图片");
                 }
 
-                LogMessage($"图片加载完成，共加载 {imagepath.Count} 个心情类别，总计 {totalImages} 张图片");
+                LogMessage($"图片加载完成，共加载 {library.Count} 个心情类别，总计 {totalImages} 张图片");
             }
             catch (Exception ex)
             {
@@ -833,408 +791,306 @@ namespace VPet.Plugin.LLMEP
             }
         }
 
-        private void LoadImagesFromDirectory(string directoryPath, IGameSave.ModeType modeType, string[] supportedFormats)
+        private static List<string> CollectImageFiles(string directoryPath, string[] supportedFormats)
         {
-            if (!Directory.Exists(directoryPath))
-            {
-                if (settings.DebugMode)
-                    LogMessage($"目录不存在: {directoryPath}");
-                return;
-            }
-
-            var imageList = new List<BitmapImage>();
-            var allFiles = new List<string>();
-
-            // Collect all files with supported formats
+            var files = new List<string>();
             foreach (string format in supportedFormats)
             {
                 try
                 {
-                    allFiles.AddRange(Directory.GetFiles(directoryPath, format, SearchOption.TopDirectoryOnly));
+                    files.AddRange(Directory.GetFiles(directoryPath, format, SearchOption.TopDirectoryOnly));
                 }
                 catch
                 {
-                    // Ignore errors for individual format searches
+                    // 忽略单个格式搜索的错误
                 }
             }
+            return files;
+        }
 
-            // Load each image file
-            foreach (string filePath in allFiles)
+        private static void AddToLibrary(Dictionary<IGameSave.ModeType, List<string>> library,
+            IGameSave.ModeType modeType, IEnumerable<string> paths)
+        {
+            if (!library.TryGetValue(modeType, out var list))
             {
-                try
-                {
-                    var bitmapImage = new BitmapImage();
-                    bitmapImage.BeginInit();
-                    bitmapImage.UriSource = new Uri(filePath, UriKind.Absolute);
-                    bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmapImage.EndInit();
-
-                    imageList.Add(bitmapImage);
-                }
-                catch (Exception ex)
-                {
-                    if (settings.DebugMode)
-                        LogMessage($"无法加载图片: {filePath}, 错误: {ex.Message}");
-                }
+                list = new List<string>();
+                library[modeType] = list;
             }
-
-            if (imageList.Count > 0)
-            {
-                // 如果该心情类别已有图片，追加而不是替换
-                if (!imagepath.ContainsKey(modeType))
-                {
-                    imagepath[modeType] = new List<BitmapImage>();
-                }
-                imagepath[modeType].AddRange(imageList);
-
-                if (settings.DebugMode)
-                    LogMessage($"{modeType} 从 {directoryPath} 加载了 {imageList.Count} 张图片");
-            }
+            list.AddRange(paths);
         }
 
         /// <summary>
-        /// 使用标签系统加载图片
+        /// 心情标签 → 宠物心情。
         /// </summary>
-        private void LoadImagesWithTagSystem(string diyPath, string[] supportedFormats)
+        private static IGameSave.ModeType? MoodTagToMode(string mood) => mood switch
+        {
+            LabelManager.MoodHappy => IGameSave.ModeType.Happy,
+            LabelManager.MoodNormal => IGameSave.ModeType.Nomal,
+            LabelManager.MoodPoor => IGameSave.ModeType.PoorCondition,
+            LabelManager.MoodIll => IGameSave.ModeType.Ill,
+            _ => null
+        };
+
+        /// <summary>
+        /// DIY 表情包：按标签里勾选的心情放进对应心情；一个都没勾的是泛用，放进所有心情
+        /// （和内置表情包一样）。以前没设心情的图只进"正常"，和"泛用"的说法对不上。
+        /// </summary>
+        private void LoadDiyImages(Dictionary<IGameSave.ModeType, List<string>> library)
         {
             try
             {
-                // 初始化标签管理器
-                var labelManager = new LabelManager(LoaddllPath());
+                string diyPath = DiyStickerStorage.EnsureRoot();
+                LogMessage($"开始加载DIY表情包: {diyPath}");
+
+                var labelManager = new LabelManager();
                 labelManager.LoadLabels();
 
-                // 扫描所有子目录中的图片
-                var directories = Directory.GetDirectories(diyPath);
-                int taggedImagesCount = 0;
+                var allModes = (IGameSave.ModeType[])Enum.GetValues(typeof(IGameSave.ModeType));
+                int general = 0, assigned = 0;
 
-                foreach (var directory in directories)
+                foreach (var filePath in DiyStickerStorage.EnumerateImages())
                 {
-                    var dirName = Path.GetFileName(directory);
+                    var modes = labelManager.GetImageMoods(Path.GetFileName(filePath))
+                        .Select(MoodTagToMode)
+                        .Where(m => m.HasValue)
+                        .Select(m => m.Value)
+                        .ToList();
 
-                    // 跳过传统的心情目录（避免重复加载）
-                    if (dirName.Equals("Normal", StringComparison.OrdinalIgnoreCase) ||
-                        dirName.Equals("Happy", StringComparison.OrdinalIgnoreCase) ||
-                        dirName.Equals("PoorCondition", StringComparison.OrdinalIgnoreCase) ||
-                        dirName.Equals("Ill", StringComparison.OrdinalIgnoreCase))
+                    if (modes.Count == 0)
                     {
-                        continue;
+                        foreach (var mode in allModes)
+                            AddToLibrary(library, mode, new[] { filePath });
+                        general++;
                     }
-
-                    var allFiles = new List<string>();
-                    foreach (string format in supportedFormats)
+                    else
                     {
-                        try
-                        {
-                            allFiles.AddRange(Directory.GetFiles(directory, format, SearchOption.TopDirectoryOnly));
-                        }
-                        catch
-                        {
-                            // 忽略单个格式搜索的错误
-                        }
-                    }
-
-                    foreach (string filePath in allFiles)
-                    {
-                        try
-                        {
-                            // 获取相对路径
-                            var relativePath = Path.GetRelativePath(diyPath, filePath).Replace('\\', '/');
-
-                            // 获取图片的心情标签
-                            var emotion = labelManager.GetImageEmotion(relativePath);
-
-                            // 根据心情标签确定目标心情类型
-                            var modeType = emotion.ToLower() switch
-                            {
-                                "happy" => IGameSave.ModeType.Happy,
-                                "normal" => IGameSave.ModeType.Nomal,
-                                "poor" => IGameSave.ModeType.PoorCondition,
-                                "ill" => IGameSave.ModeType.Ill,
-                                _ => IGameSave.ModeType.Nomal // general 或未设置时使用 Normal
-                            };
-
-                            // 加载图片
-                            var bitmapImage = new BitmapImage();
-                            bitmapImage.BeginInit();
-                            bitmapImage.UriSource = new Uri(filePath, UriKind.Absolute);
-                            bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                            bitmapImage.EndInit();
-
-                            // 添加到对应的心情类别
-                            if (!imagepath.ContainsKey(modeType))
-                            {
-                                imagepath[modeType] = new List<BitmapImage>();
-                            }
-                            imagepath[modeType].Add(bitmapImage);
-
-                            taggedImagesCount++;
-
-                            if (settings.DebugMode)
-                                LogMessage($"标签系统: {Path.GetFileName(filePath)} -> {emotion} -> {modeType}");
-                        }
-                        catch (Exception ex)
-                        {
-                            if (settings.DebugMode)
-                                LogMessage($"标签系统加载图片失败: {filePath}, 错误: {ex.Message}");
-                        }
+                        foreach (var mode in modes)
+                            AddToLibrary(library, mode, new[] { filePath });
+                        assigned++;
                     }
                 }
 
-                if (taggedImagesCount > 0)
-                {
-                    LogMessage($"标签系统加载完成: {taggedImagesCount} 张图片");
-                }
+                LogMessage($"DIY表情包加载完成: 指定心情 {assigned} 张，泛用 {general} 张");
             }
             catch (Exception ex)
             {
-                LogMessage($"标签系统加载失败: {ex.Message}");
-            }
-        }
-
-        private BitmapImage Return_Image(IGameSave.ModeType type)
-        {
-            try
-            {
-                LogDebug("ImageMgr", $"请求获取 {type} 心情的表情包");
-
-                if (!imagepath.ContainsKey(type))
-                {
-                    LogWarning("ImageMgr", $"未找到 {type} 心情的表情包集合");
-                    return null;
-                }
-
-                var imageList = imagepath[type];
-                if (imageList == null || imageList.Count == 0)
-                {
-                    LogWarning("ImageMgr", $"{type} 心情的表情包集合为空");
-                    return null;
-                }
-
-                LogDebug("ImageMgr", $"{type} 心情共有 {imageList.Count} 张表情包");
-
-                int randomIndex = random.Next(imageList.Count);
-                var selectedImage = imageList[randomIndex];
-
-                LogDebug("ImageMgr", $"随机选择第 {randomIndex + 1} 张表情包");
-
-                // 安全地获取图片路径（避免线程问题）
-                try
-                {
-                    string imagePath = selectedImage?.UriSource?.ToString() ?? "未知";
-                    LogDebug("ImageMgr", $"选中的表情包路径: {imagePath}");
-                }
-                catch (Exception ex)
-                {
-                    LogDebug("ImageMgr", $"获取图片路径时出现线程问题: {ex.Message}");
-                    LogDebug("ImageMgr", $"继续返回图片对象");
-                }
-
-                return selectedImage;
-            }
-            catch (Exception ex)
-            {
-                LogError("ImageMgr", $"获取 {type} 心情表情包失败: {ex.Message}");
-                LogDebug("ImageMgr", $"错误堆栈: {ex.StackTrace}");
-                return null;
-            }
-        }
-
-        private bool IsGifImage(BitmapImage image)
-        {
-            if (image == null)
-                return false;
-
-            // 首先检查 UriSource（本地文件）
-            if (image.UriSource != null)
-            {
-                string extension = Path.GetExtension(image.UriSource.ToString()).ToLower();
-                if (extension == ".gif")
-                    return true;
-            }
-
-            // 对于没有 UriSource 的图片（如 Base64 加载的），检查格式
-            // GIF 的魔术数字: GIF87a 或 GIF89a
-            try
-            {
-                // 尝试从 StreamSource 读取文件头
-                if (image.StreamSource != null && image.StreamSource.CanRead)
-                {
-                    long originalPosition = image.StreamSource.Position;
-                    try
-                    {
-                        byte[] header = new byte[6];
-                        image.StreamSource.Position = 0;
-                        int read = image.StreamSource.Read(header, 0, 6);
-                        if (read >= 6)
-                        {
-                            // 检查 GIF 文件头: "GIF87a" 或 "GIF89a"
-                            if (header[0] == 0x47 && header[1] == 0x49 && header[2] == 0x46 && // "GIF"
-                                header[3] == 0x38 && (header[4] == 0x37 || header[4] == 0x39) && // "87" or "89"
-                                header[5] == 0x61) // "a"
-                            {
-                                return true;
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        // 恢复原始位置
-                        image.StreamSource.Position = originalPosition;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                LogDebug("ImageMgr", $"检查GIF文件头失败: {ex.Message}");
-            }
-
-            return false;
-        }
-
-        private void DisplayImage(BitmapImage imageToShow, bool? forceIsGif = null)
-        {
-            try
-            {
-                if (imageToShow == null)
-                {
-                    LogWarning("ImageMgr", "传入的图片为空，无法显示");
-                    return;
-                }
-
-                if (image?.Image == null)
-                {
-                    LogWarning("ImageMgr", "UI组件未初始化，无法显示图片");
-                    return;
-                }
-
-                // 确保在UI线程中执行
-                if (!Application.Current.Dispatcher.CheckAccess())
-                {
-                    LogDebug("ImageMgr", "切换到UI线程显示表情包");
-                    Application.Current.Dispatcher.Invoke(() => DisplayImage(imageToShow, forceIsGif));
-                    return;
-                }
-
-                DisplayImageInternal(imageToShow, forceIsGif);
-            }
-            catch (Exception ex)
-            {
-                LogError("ImageMgr", $"显示表情包失败: {ex.Message}");
-                LogDebug("ImageMgr", $"错误堆栈: {ex.StackTrace}");
+                LogMessage($"DIY表情包加载失败: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// 显示图片的内部实现（假设已经在 UI 线程中）
+        /// 重新加载表情包库（设置窗口里改了心情/标签、导入了图片之后调用），立即生效。
         /// </summary>
-        private void DisplayImageInternal(BitmapImage imageToShow, bool? forceIsGif = null, byte[] imageData = null)
+        public void ReloadStickerLibrary()
         {
-            try
+            LoadImgae();
+            labelImageMatcher?.LoadLabels();
+            imageSelector?.BuildImagePathCache();
+        }
+
+        /// <summary>
+        /// 随机挑一张指定心情的表情包路径。任意线程可调用。
+        /// </summary>
+        private string PickStickerPath(IGameSave.ModeType type)
+        {
+            var library = imagepath;
+            if (!library.TryGetValue(type, out var imageList) || imageList.Count == 0)
             {
-                LogDebug("ImageMgr", "开始显示表情包");
-
-                // 只在有 UriSource 时才记录路径
-                if (imageToShow.UriSource != null)
-                {
-                    LogDebug("ImageMgr", $"图片路径: {imageToShow.UriSource}");
-                }
-                else
-                {
-                    LogDebug("ImageMgr", "图片来源: Base64/内存流");
-                }
-
-                LogDebug("ImageMgr", $"图片尺寸: {imageToShow.PixelWidth}x{imageToShow.PixelHeight}");
-
-                image.Visibility = Visibility.Visible;
-                LogDebug("ImageMgr", "UI组件已设置为可见");
-
-                // 使用强制指定的isGif值，或者自动检测
-                bool isGif = forceIsGif ?? IsGifImage(imageToShow);
-
-                // 设置图片数据用于复制功能
-                if (imageData != null && imageData.Length > 0)
-                {
-                    image.SetImageData(imageData, isGif);
-                    LogDebug("ImageMgr", $"已设置图片数据用于复制（{imageData.Length} 字节，类型: {(isGif ? "GIF" : "静态图片")}）");
-                }
-
-                if (isGif)
-                {
-                    LogDebug("ImageMgr", "检测到GIF动画，使用动画显示模式");
-                    // For GIF images
-                    ImageBehavior.SetAnimatedSource(image.Image, imageToShow);
-                    image.Image.Source = null;
-                    LogDebug("ImageMgr", "GIF动画设置完成");
-                }
-                else
-                {
-                    LogDebug("ImageMgr", "检测到静态图片，使用静态显示模式");
-                    // For static images
-                    ImageBehavior.SetAnimatedSource(image.Image, null);
-                    image.Image.Source = imageToShow;
-                    LogDebug("ImageMgr", "静态图片设置完成");
-                }
-
-                LogInfo("ImageMgr", "表情包显示成功");
+                LogWarning("ImageMgr", $"{type} 心情的表情包集合为空");
+                return null;
             }
-            catch (Exception ex)
+
+            var selected = imageList[Random.Shared.Next(imageList.Count)];
+            LogDebug("ImageMgr", $"从 {imageList.Count} 张 {type} 心情表情包中选中: {selected}");
+            return selected;
+        }
+
+        private void LogLibraryState(string prefix)
+        {
+            LogMessage($"{prefix}: 当前表情包库状态:");
+            foreach (var kvp in imagepath)
             {
-                LogError("ImageMgr", $"显示表情包失败: {ex.Message}");
-                LogDebug("ImageMgr", $"错误堆栈: {ex.StackTrace}");
+                LogMessage($"  - {kvp.Key}: {kvp.Value?.Count ?? 0} 张");
             }
         }
 
-        private void HideImage()
+        #region 表情包显示（唯一入口）
+
+        // 整个插件同一时刻只有一张表情包。以前每条触发路径各自"显示→等→隐藏"，互不知情：
+        // 前一轮的计时到点会把后一轮刚显示的关掉；一句话还会接连出两张。
+        private readonly object _stickerGate = new object();
+        private CancellationTokenSource _stickerCts;
+        private long _stickerGeneration;
+
+        /// <summary>
+        /// 是否有表情包正在解码或显示。自动触发在这时直接放弃，避免连环解码。
+        /// </summary>
+        public bool IsStickerBusy
         {
+            get { lock (_stickerGate) return _stickerCts != null; }
+        }
+
+        /// <summary>
+        /// 显示本地图片文件。返回值表示是否真的显示出来了；到点后在后台自动隐藏。
+        /// </summary>
+        /// <param name="interrupt">true=顶掉当前表情包（用户手动/外部调用）；false=当前有表情包就放弃（自动触发）</param>
+        public Task<bool> ShowStickerFileAsync(string path, int durationMs, bool interrupt, string source)
+        {
+            if (string.IsNullOrEmpty(path))
+                return Task.FromResult(false);
+            return ShowStickerAsync(maxPixel => StickerDecoder.DecodeFile(path, maxPixel), durationMs, interrupt, source);
+        }
+
+        /// <summary>
+        /// 显示内存中的图片字节（在线表情包、Base64）。语义同 <see cref="ShowStickerFileAsync"/>。
+        /// </summary>
+        public Task<bool> ShowStickerBytesAsync(byte[] data, int durationMs, bool interrupt, string source)
+        {
+            if (data == null || data.Length == 0)
+                return Task.FromResult(false);
+            return ShowStickerAsync(maxPixel => StickerDecoder.Decode(data, maxPixel), durationMs, interrupt, source);
+        }
+
+        private async Task<bool> ShowStickerAsync(Func<int, DecodedSticker> decode, int durationMs, bool interrupt, string source)
+        {
+            var dispatcher = Application.Current?.Dispatcher;
+            if (image == null || dispatcher == null)
+            {
+                LogWarning("ImageMgr", "UI组件未初始化，无法显示表情包");
+                return false;
+            }
+
+            CancellationTokenSource previous;
+            var cts = new CancellationTokenSource();
+            long generation;
+            lock (_stickerGate)
+            {
+                if (_stickerCts != null && !interrupt)
+                {
+                    LogDebug("ImageMgr", $"[{source}] 已有表情包在显示，跳过本次自动触发");
+                    return false;
+                }
+                previous = _stickerCts;
+                _stickerCts = cts;
+                generation = Interlocked.Increment(ref _stickerGeneration);
+            }
+            // 锁外取消：被取消方的续体可能在 Cancel 里同步跑，不能让它撞上这把锁
+            previous?.Cancel();
+
             try
             {
-                if (image?.Image == null)
+                int maxPixel = await dispatcher.InvokeAsync(() => image.GetDecodePixelSize());
+
+                // 解码（含 GIF 全部帧）在线程池上做，UI 线程只负责挂上冻结好的帧
+                var sticker = await Task.Run(() => decode(maxPixel), cts.Token).ConfigureAwait(false);
+                cts.Token.ThrowIfCancellationRequested();
+
+                bool shown = await dispatcher.InvokeAsync(() =>
                 {
-                    LogDebug("ImageMgr", "UI组件未初始化，无需隐藏");
-                    return;
+                    if (cts.IsCancellationRequested)
+                        return false;
+                    image.ShowSticker(sticker);
+                    return true;
+                });
+
+                if (!shown)
+                {
+                    ReleaseStickerSlot(cts);
+                    return false;
                 }
 
-                // 确保在UI线程中执行
-                if (!Application.Current.Dispatcher.CheckAccess())
-                {
-                    LogDebug("ImageMgr", "切换到UI线程隐藏表情包");
-                    Application.Current.Dispatcher.Invoke(() => HideImage());
-                    return;
-                }
-
-                LogDebug("ImageMgr", "开始隐藏表情包");
-
-                // 先隐藏UI，再清理资源
-                image.Visibility = Visibility.Collapsed;
-                
-                try
-                {
-                    // 清理GIF动画源
-                    ImageBehavior.SetAnimatedSource(image.Image, null);
-                }
-                catch (Exception ex)
-                {
-                    LogDebug("ImageMgr", $"清理GIF动画源时出现异常: {ex.Message}");
-                }
-                
-                try
-                {
-                    // 清理图片源
-                    image.Image.Source = null;
-                }
-                catch (Exception ex)
-                {
-                    LogDebug("ImageMgr", $"清理图片源时出现异常: {ex.Message}");
-                }
-
-                LogInfo("ImageMgr", "表情包已隐藏");
+                LogInfo("ImageMgr", $"[{source}] 表情包显示成功（{sticker.Frames.Length} 帧，解码长边 ≤{maxPixel}px），{durationMs}ms 后自动隐藏");
+                _ = HideStickerLaterAsync(cts, generation, durationMs);
+                return true;
+            }
+            catch (OperationCanceledException)
+            {
+                ReleaseStickerSlot(cts);
+                return false;
             }
             catch (Exception ex)
             {
-                LogError("ImageMgr", $"隐藏表情包失败: {ex.Message}");
-                LogDebug("ImageMgr", $"错误堆栈: {ex.StackTrace}");
+                LogError("ImageMgr", $"[{source}] 显示表情包失败: {ex.Message}");
+                // 上一张的自动隐藏已经被本次作废，本次又没显示出来——不清掉它就会一直挂着
+                await ClearStickerIfCurrentAsync(generation);
+                ReleaseStickerSlot(cts);
+                return false;
             }
         }
+
+        private async Task ClearStickerIfCurrentAsync(long generation)
+        {
+            try
+            {
+                var dispatcher = Application.Current?.Dispatcher;
+                if (dispatcher == null)
+                    return;
+
+                await dispatcher.InvokeAsync(() =>
+                {
+                    if (Interlocked.Read(ref _stickerGeneration) == generation)
+                        image?.ClearSticker();
+                });
+            }
+            catch (Exception ex)
+            {
+                LogDebug("ImageMgr", $"隐藏表情包失败: {ex.Message}");
+            }
+        }
+
+        private async Task HideStickerLaterAsync(CancellationTokenSource cts, long generation, int durationMs)
+        {
+            try
+            {
+                await Task.Delay(Math.Max(0, durationMs), cts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // 被新表情包顶掉或被手动关闭：界面已归别人管，这里什么都不碰
+                ReleaseStickerSlot(cts);
+                return;
+            }
+
+            await ClearStickerIfCurrentAsync(generation);
+            ReleaseStickerSlot(cts);
+        }
+
+        private void ReleaseStickerSlot(CancellationTokenSource cts)
+        {
+            lock (_stickerGate)
+            {
+                if (ReferenceEquals(_stickerCts, cts))
+                    _stickerCts = null;
+            }
+            // CTS 没挂计时器也没取过 WaitHandle，不 Dispose 也不漏；
+            // 不 Dispose 才能让别的线程在锁外放心 Cancel 它。
+        }
+
+        /// <summary>
+        /// 立即隐藏当前表情包并作废它的自动隐藏计时。任意线程可调用。
+        /// </summary>
+        public void HideCurrentSticker()
+        {
+            CancellationTokenSource current;
+            lock (_stickerGate)
+            {
+                current = _stickerCts;
+                _stickerCts = null;
+                Interlocked.Increment(ref _stickerGeneration);
+            }
+            current?.Cancel();
+
+            var dispatcher = Application.Current?.Dispatcher;
+            if (image == null || dispatcher == null)
+                return;
+
+            if (dispatcher.CheckAccess())
+                image.ClearSticker();
+            else
+                dispatcher.BeginInvoke(new Action(() => image.ClearSticker()));
+        }
+
+        #endregion
 
         private void SetRandomInterval()
         {
@@ -1278,11 +1134,20 @@ namespace VPet.Plugin.LLMEP
                     return; // Don't restart timer when time trigger is disabled
                 }
 
+                // 已有表情包在显示：这一轮让过去，别去打断它
+                if (IsStickerBusy)
+                {
+                    LogDebug("ImageMgr", "定时器触发: 已有表情包在显示，本轮跳过");
+                    SetRandomInterval();
+                    timer?.Start();
+                    return;
+                }
+
                 // 优先尝试在线表情包（如果启用且在随机显示中启用）
                 if (settings.OnlineSticker.IsEnabled && settings.OnlineSticker.EnableInRandomDisplay)
                 {
                     LogDebug("ImageMgr", "定时器触发: 尝试显示在线随机表情包");
-                    bool onlineSuccess = await ShowOnlineRandomStickerAsync();
+                    bool onlineSuccess = await ShowOnlineRandomStickerAsync(interrupt: false);
                     if (onlineSuccess)
                     {
                         LogInfo("ImageMgr", "定时器触发: 在线表情包显示成功");
@@ -1305,18 +1170,12 @@ namespace VPet.Plugin.LLMEP
                 var currentMode = MW.Core.Save.CalMode();
                 LogDebug("ImageMgr", $"当前宠物心情: {currentMode}");
 
-                var imageToShow = Return_Image(currentMode);
+                var imageToShow = PickStickerPath(currentMode);
 
                 if (imageToShow != null)
                 {
                     LogInfo("ImageMgr", $"定时器显示 {currentMode} 心情表情包");
-                    DisplayImage(imageToShow);
-
-                    LogDebug("ImageMgr", $"表情包将显示 {settings.GetDisplayDurationMs()}ms");
-                    // Auto-hide after configured duration
-                    await Task.Delay(settings.GetDisplayDurationMs());
-                    HideImage();
-                    LogDebug("ImageMgr", "表情包显示周期完成");
+                    await ShowStickerFileAsync(imageToShow, settings.GetDisplayDurationMs(), interrupt: false, "定时器");
                 }
                 else
                 {
@@ -1424,18 +1283,12 @@ namespace VPet.Plugin.LLMEP
                 var currentMode = MW.Core.Save.CalMode();
                 LogMessage($"手动显示: 当前宠物心情: {currentMode}");
 
-                var imageToShow = Return_Image(currentMode);
+                var imageToShow = PickStickerPath(currentMode);
 
                 if (imageToShow != null)
                 {
                     LogMessage($"手动显示: 准备显示 {currentMode} 心情表情包");
-                    DisplayImage(imageToShow);
-
-                    LogMessage($"手动显示: 表情包将显示 {settings.GetDisplayDurationMs()}ms");
-                    // Auto-hide after configured duration
-                    await Task.Delay(settings.GetDisplayDurationMs());
-                    HideImage();
-                    LogMessage("手动显示: 表情包显示完成");
+                    await ShowStickerFileAsync(imageToShow, settings.GetDisplayDurationMs(), interrupt: true, "手动");
                 }
                 else
                 {
@@ -1632,18 +1485,17 @@ namespace VPet.Plugin.LLMEP
                     LogMessage($"内置表情标签文件不存在: {builtInJsonPath}");
                 }
 
-                // 加载DIY_Expression的标签（仅JSON格式）
-                string diyJsonPath = Path.Combine(dllPath, "DIY_Expression", "label.json");
-
-                if (File.Exists(diyJsonPath))
-                {
-                    vectorRetriever.LoadLabels(diyJsonPath);
-                    LogMessage($"已加载DIY表情标签: {diyJsonPath}");
-                }
-                else
-                {
-                    LogMessage($"DIY表情标签文件不存在: {diyJsonPath}");
-                }
+                // 加载DIY表情包标签（diy_labels.json；旧格式 label.json 已在启动迁移时并入）
+                // 只取普通标签 + 心情标签，去掉 general / AI 处理标记这类不表达语义的保留标签
+                var diyLabels = new LabelManager();
+                diyLabels.LoadLabels();
+                var diyImageLabels = DiyStickerStorage.EnumerateImages()
+                    .Select(Path.GetFileName)
+                    .ToDictionary(
+                        name => name,
+                        name => diyLabels.GetImageTags(name).Where(t => !LabelManager.IsReservedTag(t)).ToList());
+                vectorRetriever.LoadLabels(diyImageLabels, DiyStickerStorage.LabelsFilePath);
+                LogMessage($"已加载DIY表情标签: {DiyStickerStorage.LabelsFilePath}");
             }
             catch (Exception ex)
             {
@@ -1702,29 +1554,20 @@ namespace VPet.Plugin.LLMEP
                 var currentMode = MW.Core.Save.CalMode();
                 LogMessage($"测试显示: 当前宠物心情: {currentMode}");
 
-                var imageToShow = Return_Image(currentMode);
+                var imageToShow = PickStickerPath(currentMode);
 
                 if (imageToShow != null)
                 {
                     LogMessage($"测试显示: 找到 {currentMode} 心情表情包，开始显示");
-                    DisplayImage(imageToShow);
-
-                    LogMessage($"测试显示: 表情包将显示 {settings.GetDisplayDurationMs()}ms");
-                    // Auto-hide after configured duration
-                    await Task.Delay(settings.GetDisplayDurationMs());
-                    HideImage();
-                    LogMessage("测试显示: 表情包显示完成");
+                    bool shown = await ShowStickerFileAsync(imageToShow, settings.GetDisplayDurationMs(), interrupt: true, "测试");
+                    LogMessage(shown ? "测试显示: 表情包显示成功" : "测试显示: 表情包显示失败");
                 }
                 else
                 {
                     LogMessage($"测试显示失败：{currentMode} 心情没有可用的图片");
 
                     // 显示详细的表情包库状态
-                    LogMessage("测试显示: 当前表情包库状态:");
-                    foreach (var kvp in imagepath)
-                    {
-                        LogMessage($"  - {kvp.Key}: {kvp.Value?.Count ?? 0} 张");
-                    }
+                    LogLibraryState("测试显示");
                 }
 
                 // Restart timer if enabled
@@ -1831,56 +1674,48 @@ namespace VPet.Plugin.LLMEP
 
         /// <summary>
         /// 处理捕获到的气泡文本（仅在未启用LLM情感分析时使用）
+        ///
+        /// 开启气泡触发时的语义是"VPet 每次说话时按概率显示表情包"。以前关键词匹配那段写在
+        /// 概率门外面，不管命不命中都会再显示一张——默认 20% 实际上是句句出图，命中时一句话出两张。
+        /// 现在关键词只负责挑心情，开启时整段都在概率门之内；关闭时沿用原设计每句按关键词出图
+        /// （与 SpeechCapturer 关闭气泡触发时"每句都做情感分析"对称），但都不打断正在显示的那张。
         /// </summary>
         private async void OnBubbleTextCaptured(object sender, string text)
         {
             try
             {
-                LogMessage("=== BubbleTextListener 开始处理气泡文本 ===");
-
                 if (string.IsNullOrWhiteSpace(text))
                 {
-                    LogMessage("BubbleTextListener: 文本为空或空白，跳过处理");
+                    LogDebug("BubbleTextListener", "文本为空或空白，跳过处理");
                     return;
                 }
 
-                // 记录文本信息
-                string textPreview = text.Length > 100 ? text.Substring(0, 100) + "..." : text;
-                LogMessage($"BubbleTextListener: 接收到文本 [长度: {text.Length}]");
-                LogMessage($"BubbleTextListener: 内容预览: {textPreview}");
-
-                // 检查插件是否启用
                 if (!settings.IsEnabled)
                 {
-                    LogMessage("BubbleTextListener: 插件未启用，跳过处理");
+                    LogDebug("BubbleTextListener", "插件未启用，跳过处理");
                     return;
                 }
 
-                // 处理气泡概率触发（在入口处进行概率检查）
-                if (settings.UseBubbleTrigger)
+                if (IsStickerBusy)
                 {
-                    // 入口检查：概率未命中直接跳过，不进入内部处理
-                    if (!settings.ShouldTriggerBubble())
-                    {
-                        LogMessage($"BubbleTextListener: 未命中概率 ({settings.BubbleTriggerProbability}%)，跳过显示");
-                    }
-                    else
-                    {
-                        LogMessage($"BubbleTextListener: 命中概率 ({settings.BubbleTriggerProbability}%)，开始显示");
-                        await HandleBubbleProbabilityTrigger();
-                    }
-                }
-                else
-                {
-                    LogMessage("BubbleTextListener: 气泡触发已禁用，跳过概率触发");
+                    LogDebug("BubbleTextListener", "已有表情包在显示，跳过本句");
+                    return;
                 }
 
-                // 注意：此方法只在未启用LLM情感分析时才会被调用
-                // 使用简单的关键词匹配逻辑（与气泡触发并行工作）
-                LogMessage("BubbleTextListener: 使用简单关键词匹配处理");
-                await ProcessTextWithSimpleMatching(text);
+                if (!settings.UseBubbleTrigger)
+                {
+                    await ShowKeywordMatchedStickerAsync(text, "关键词匹配");
+                    return;
+                }
 
-                LogMessage("=== BubbleTextListener 气泡文本处理完成 ===");
+                if (!settings.ShouldTriggerBubble())
+                {
+                    LogDebug("BubbleTextListener", $"未命中概率 ({settings.BubbleTriggerProbability}%)，跳过显示");
+                    return;
+                }
+
+                LogMessage($"BubbleTextListener: 命中概率 ({settings.BubbleTriggerProbability}%)，开始显示");
+                await HandleBubbleProbabilityTrigger(text);
             }
             catch (Exception ex)
             {
@@ -1890,93 +1725,39 @@ namespace VPet.Plugin.LLMEP
         }
 
         /// <summary>
-        /// 使用简单关键词匹配处理文本
+        /// 简单关键词匹配：根据文本挑心情，没命中就用宠物当前心情。
         /// </summary>
-        private async Task ProcessTextWithSimpleMatching(string text)
+        private IGameSave.ModeType MatchMoodByKeywords(string text)
         {
-            try
+            IGameSave.ModeType currentMode = MW.Core.Save.CalMode();
+            if (string.IsNullOrWhiteSpace(text))
+                return currentMode;
+
+            string lowerText = text.ToLower();
+
+            if (lowerText.Contains("开心") || lowerText.Contains("高兴") || lowerText.Contains("快乐") ||
+                lowerText.Contains("哈哈") || lowerText.Contains("嘻嘻"))
             {
-                LogMessage("--- 开始简单关键词匹配处理 ---");
-
-                // 简单的关键词匹配示例
-                // 可以根据需要扩展更复杂的匹配逻辑
-
-                IGameSave.ModeType currentMode = MW.Core.Save.CalMode();
-                IGameSave.ModeType targetMode = currentMode; // 默认使用当前心情
-
-                LogMessage($"简单匹配: 当前宠物心情: {currentMode}");
-                LogMessage($"简单匹配: 开始分析文本关键词");
-
-                // 根据文本内容判断情感倾向
-                string lowerText = text.ToLower();
-                bool foundKeyword = false;
-                string matchedKeywords = "";
-
-                if (lowerText.Contains("开心") || lowerText.Contains("高兴") || lowerText.Contains("快乐") ||
-                    lowerText.Contains("哈哈") || lowerText.Contains("嘻嘻"))
-                {
-                    targetMode = IGameSave.ModeType.Happy;
-                    foundKeyword = true;
-                    matchedKeywords = "开心相关关键词";
-                }
-                else if (lowerText.Contains("难过") || lowerText.Contains("伤心") || lowerText.Contains("哭") ||
-                         lowerText.Contains("不开心") || lowerText.Contains("郁闷"))
-                {
-                    targetMode = IGameSave.ModeType.PoorCondition;
-                    foundKeyword = true;
-                    matchedKeywords = "难过相关关键词";
-                }
-                else if (lowerText.Contains("生病") || lowerText.Contains("不舒服") || lowerText.Contains("头疼") ||
-                         lowerText.Contains("感冒") || lowerText.Contains("发烧"))
-                {
-                    targetMode = IGameSave.ModeType.Ill;
-                    foundKeyword = true;
-                    matchedKeywords = "生病相关关键词";
-                }
-
-                if (foundKeyword)
-                {
-                    LogMessage($"简单匹配: 匹配到 {matchedKeywords}，目标心情: {targetMode}");
-                }
-                else
-                {
-                    LogMessage($"简单匹配: 未匹配到特定关键词，使用当前心情: {targetMode}");
-                }
-
-                // 显示对应心情的表情包
-                var imageToShow = Return_Image(targetMode);
-                if (imageToShow != null)
-                {
-                    LogMessage($"简单匹配: 找到 {targetMode} 心情的表情包，开始显示");
-                    LogMessage($"简单匹配: 表情包路径: {imageToShow.UriSource?.ToString() ?? "未知"}");
-
-                    DisplayImage(imageToShow);
-                    LogMessage($"简单匹配: 表情包显示成功，将在 {settings.GetDisplayDurationMs()}ms 后自动隐藏");
-
-                    // 自动隐藏
-                    await Task.Delay(settings.GetDisplayDurationMs());
-                    HideImage();
-                    LogMessage("简单匹配: 表情包已自动隐藏");
-                }
-                else
-                {
-                    LogMessage($"简单匹配: 未找到 {targetMode} 心情的表情包");
-
-                    // 统计各心情的表情包数量
-                    LogMessage("简单匹配: 当前表情包库状态:");
-                    foreach (var kvp in imagepath)
-                    {
-                        LogMessage($"  - {kvp.Key}: {kvp.Value?.Count ?? 0} 张");
-                    }
-                }
-
-                LogMessage("--- 简单关键词匹配处理完成 ---");
+                LogDebug("SimpleMatching", "匹配到开心相关关键词");
+                return IGameSave.ModeType.Happy;
             }
-            catch (Exception ex)
+
+            if (lowerText.Contains("难过") || lowerText.Contains("伤心") || lowerText.Contains("哭") ||
+                lowerText.Contains("不开心") || lowerText.Contains("郁闷"))
             {
-                LogMessage($"简单匹配处理失败: {ex.Message}");
-                LogMessage($"简单匹配错误堆栈: {ex.StackTrace}");
+                LogDebug("SimpleMatching", "匹配到难过相关关键词");
+                return IGameSave.ModeType.PoorCondition;
             }
+
+            if (lowerText.Contains("生病") || lowerText.Contains("不舒服") || lowerText.Contains("头疼") ||
+                lowerText.Contains("感冒") || lowerText.Contains("发烧"))
+            {
+                LogDebug("SimpleMatching", "匹配到生病相关关键词");
+                return IGameSave.ModeType.Ill;
+            }
+
+            LogDebug("SimpleMatching", $"未匹配到特定关键词，使用当前心情: {currentMode}");
+            return currentMode;
         }
 
         /// <summary>
@@ -2001,78 +1782,13 @@ namespace VPet.Plugin.LLMEP
         }
 
         /// <summary>
-        /// 公共方法：显示指定的表情包（供 ImageSelector 调用）
+        /// 当前心情的随机表情包路径（供 ImageSelector / EmotionAnalyzer 降级用）。任意线程可调用。
         /// </summary>
-        public void DisplayImagePublic(BitmapImage imageToShow)
-        {
-            DisplayImagePublic(imageToShow, null);
-        }
-
-        /// <summary>
-        /// 公共方法：显示指定的表情包，支持强制指定是否为GIF
-        /// </summary>
-        public void DisplayImagePublic(BitmapImage imageToShow, bool? forceIsGif)
+        public string GetCurrentMoodImagePath()
         {
             try
             {
-                // 确保在UI线程中执行
-                if (!Application.Current.Dispatcher.CheckAccess())
-                {
-                    LogMessage("ImageSelector 请求显示表情包（切换到UI线程）");
-                    Application.Current.Dispatcher.Invoke(() => DisplayImagePublic(imageToShow, forceIsGif));
-                    return;
-                }
-
-                LogMessage("ImageSelector 请求显示表情包");
-                DisplayImage(imageToShow, forceIsGif);
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"ImageSelector 显示表情包失败: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 公共方法：隐藏表情包（供 ImageSelector 调用）
-        /// </summary>
-        public void HideImagePublic()
-        {
-            try
-            {
-                // 确保在UI线程中执行
-                if (!Application.Current.Dispatcher.CheckAccess())
-                {
-                    LogMessage("ImageSelector 请求隐藏表情包（切换到UI线程）");
-                    Application.Current.Dispatcher.Invoke(() => HideImagePublic());
-                    return;
-                }
-
-                LogMessage("ImageSelector 请求隐藏表情包");
-                HideImage();
-            }
-            catch (Exception ex)
-            {
-                LogMessage($"ImageSelector 隐藏表情包失败: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 公共方法：获取当前心情的随机图片（供 ImageSelector 调用）
-        /// </summary>
-        public BitmapImage GetCurrentMoodImagePublic()
-        {
-            try
-            {
-                // 确保在UI线程中执行
-                if (!Application.Current.Dispatcher.CheckAccess())
-                {
-                    LogMessage("ImageMgr: 切换到UI线程获取当前心情图片");
-                    return Application.Current.Dispatcher.Invoke(() => GetCurrentMoodImagePublic());
-                }
-
-                var currentMode = MW.Core.Save.CalMode();
-                LogMessage($"ImageMgr: 为 ImageSelector 获取 {currentMode} 心情的随机图片");
-                return Return_Image(currentMode);
+                return PickStickerPath(MW.Core.Save.CalMode());
             }
             catch (Exception ex)
             {
@@ -2085,7 +1801,8 @@ namespace VPet.Plugin.LLMEP
         /// 处理气泡概率触发（内部方法）
         /// 注意：调用此方法前必须在入口处完成概率检查
         /// </summary>
-        private async Task HandleBubbleProbabilityTrigger()
+        /// <param name="text">气泡文本；为空时直接用宠物当前心情</param>
+        private async Task HandleBubbleProbabilityTrigger(string text = null)
         {
             try
             {
@@ -2093,44 +1810,42 @@ namespace VPet.Plugin.LLMEP
                 if (settings.OnlineSticker.IsEnabled && settings.OnlineSticker.EnableInBubbleTrigger)
                 {
                     LogMessage("气泡概率触发: 尝试显示在线随机表情包");
-                    bool onlineSuccess = await ShowOnlineRandomStickerAsync();
-                    if (onlineSuccess)
+                    if (await ShowOnlineRandomStickerAsync(interrupt: false))
                     {
                         LogMessage("气泡概率触发: 在线表情包显示成功");
-                        LogMessage("=== 气泡概率触发周期完成（在线表情包）===");
                         return;
                     }
-                    else
-                    {
-                        LogMessage("气泡概率触发: 在线表情包显示失败，使用本地表情包");
-                    }
+
+                    LogMessage("气泡概率触发: 在线表情包显示失败，使用本地表情包");
                 }
 
                 // 显示本地表情包
-                var currentMode = MW.Core.Save.CalMode();
-                var imageToShow = Return_Image(currentMode);
-
-                if (imageToShow != null)
-                {
-                    LogMessage($"气泡概率触发: 显示 {currentMode} 心情表情包");
-                    DisplayImage(imageToShow);
-
-                    // 自动隐藏
-                    await Task.Delay(settings.GetDisplayDurationMs());
-                    HideImage();
-                    LogMessage("气泡概率触发: 表情包显示完成");
-                }
-                else
-                {
-                    LogMessage($"气泡概率触发: 未找到 {currentMode} 心情的表情包");
-                }
-
-                LogMessage("=== 气泡概率触发周期完成 ===");
+                await ShowKeywordMatchedStickerAsync(text, "气泡触发");
             }
             catch (Exception ex)
             {
                 LogMessage($"处理气泡概率触发失败: {ex.Message}");
                 LogMessage($"气泡概率触发错误堆栈: {ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// 按文本关键词挑心情并显示一张本地表情包（自动触发，不打断正在显示的那张）。
+        /// </summary>
+        private async Task ShowKeywordMatchedStickerAsync(string text, string source)
+        {
+            var targetMode = MatchMoodByKeywords(text);
+            var imageToShow = PickStickerPath(targetMode);
+
+            if (imageToShow != null)
+            {
+                LogDebug(source, $"显示 {targetMode} 心情表情包");
+                await ShowStickerFileAsync(imageToShow, settings.GetDisplayDurationMs(), interrupt: false, source);
+            }
+            else
+            {
+                LogMessage($"{source}: 未找到 {targetMode} 心情的表情包");
+                LogLibraryState(source);
             }
         }
 
@@ -2211,20 +1926,9 @@ namespace VPet.Plugin.LLMEP
                     return builtInPath;
                 }
 
-                // 再在DIY表情包目录查找
-                string diyPath = Path.Combine(dllPath, "DIY_Expression");
-                var moodFolders = new[] { "Happy", "Nomal", "PoorCondition", "Ill" };
-
-                foreach (var mood in moodFolders)
-                {
-                    string moodPath = Path.Combine(diyPath, mood, filename);
-                    if (File.Exists(moodPath))
-                    {
-                        return moodPath;
-                    }
-                }
-
-                return null;
+                // 再在DIY表情包目录（文档\VPetLLM\Emotion，单层）查找
+                string diyPath = Path.Combine(DiyStickerStorage.RootPath, filename);
+                return File.Exists(diyPath) ? diyPath : null;
             }
             catch (Exception ex)
             {
@@ -2354,7 +2058,8 @@ namespace VPet.Plugin.LLMEP
         /// <summary>
         /// 显示在线随机表情包
         /// </summary>
-        public async Task<bool> ShowOnlineRandomStickerAsync()
+        /// <param name="interrupt">true=顶掉当前表情包（菜单/设置页手动触发）；false=当前有表情包就放弃（自动触发）</param>
+        public async Task<bool> ShowOnlineRandomStickerAsync(bool interrupt = true)
         {
             try
             {
@@ -2365,7 +2070,7 @@ namespace VPet.Plugin.LLMEP
                 }
 
                 LogMessage("开始显示在线随机表情包");
-                bool result = await onlineStickerManager.DisplayRandomStickerAsync();
+                bool result = await onlineStickerManager.DisplayRandomStickerAsync(interrupt);
 
                 if (result)
                 {
@@ -2432,29 +2137,6 @@ namespace VPet.Plugin.LLMEP
             {
                 LogMessage($"获取在线表情包系统提示词失败: {ex.Message}");
                 return string.Empty;
-            }
-        }
-
-        /// <summary>
-        /// 从路径加载图片
-        /// </summary>
-        public BitmapImage LoadImageFromPath(string imagePath)
-        {
-            try
-            {
-                var bitmapImage = new BitmapImage();
-                bitmapImage.BeginInit();
-                bitmapImage.UriSource = new Uri(imagePath, UriKind.Absolute);
-                bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                bitmapImage.EndInit();
-
-                Utils.Logger.Debug("ImageMgr", $"图片加载成功: {imagePath}");
-                return bitmapImage;
-            }
-            catch (Exception ex)
-            {
-                Utils.Logger.Error("ImageMgr", $"加载图片失败 {imagePath}: {ex.Message}");
-                return null;
             }
         }
 
@@ -2527,75 +2209,9 @@ namespace VPet.Plugin.LLMEP
                     return;
                 }
 
-                // 检测是否为 GIF（通过文件头）
-                bool isGif = imageBytes.Length >= 6 &&
-                            imageBytes[0] == 0x47 && imageBytes[1] == 0x49 && imageBytes[2] == 0x46 && // "GIF"
-                            imageBytes[3] == 0x38 && (imageBytes[4] == 0x37 || imageBytes[4] == 0x39) && // "87" or "89"
-                            imageBytes[5] == 0x61; // "a"
-
-                LogDebug("ImageMgr", $"图片格式检测: {(isGif ? "GIF动画" : "静态图片")}");
-
-                // 在 UI 线程中创建 BitmapImage 并显示
-                MemoryStream msToDispose = null;
-                await Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    try
-                    {
-                        // 创建 BitmapImage
-                        // 注意：对于 GIF，需要保持 MemoryStream 打开，所以不使用 using
-                        var bitmapImage = new BitmapImage();
-                        var ms = new MemoryStream(imageBytes);
-                        
-                        bitmapImage.BeginInit();
-                        bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                        bitmapImage.StreamSource = ms;
-                        bitmapImage.EndInit();
-                        
-                        // 对于静态图片，可以冻结并关闭流
-                        // 对于 GIF，需要保持流打开，所以不冻结
-                        if (!isGif)
-                        {
-                            bitmapImage.Freeze();
-                            ms.Dispose();
-                        }
-                        else
-                        {
-                            // 保存 MemoryStream 引用以便稍后清理
-                            msToDispose = ms;
-                        }
-
-                        LogDebug("ImageMgr", $"BitmapImage 创建成功，尺寸: {bitmapImage.PixelWidth}x{bitmapImage.PixelHeight}");
-
-                        // 显示图片（已经在 UI 线程中，直接调用内部逻辑）
-                        DisplayImageInternal(bitmapImage, isGif, imageBytes);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogError("ImageMgr", $"在 UI 线程中创建/显示图片失败: {ex.Message}");
-                        LogDebug("ImageMgr", $"错误堆栈: {ex.StackTrace}");
-                    }
-                });
-
-                // 等待指定时长
-                await Task.Delay(durationSeconds * 1000);
-
-                // 隐藏图片
-                HideImage();
-
-                // 清理 GIF 的 MemoryStream
-                if (msToDispose != null)
-                {
-                    try
-                    {
-                        msToDispose.Dispose();
-                    }
-                    catch
-                    {
-                        // 忽略清理错误
-                    }
-                }
-
-                LogInfo("ImageMgr", "Base64 图片显示完成");
+                // 解码与显示走统一入口：后台按显示尺寸解码，到点自动隐藏，不再阻塞到隐藏为止
+                bool shown = await ShowStickerBytesAsync(imageBytes, durationSeconds * 1000, interrupt: true, "Base64");
+                LogInfo("ImageMgr", shown ? "Base64 图片显示成功" : "Base64 图片显示失败");
             }
             catch (Exception ex)
             {

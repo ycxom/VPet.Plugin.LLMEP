@@ -59,34 +59,43 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                     return;
                 }
 
-                int loadedCount = 0;
-                foreach (var imageLabel in labelData.images)
-                {
-                    if (string.IsNullOrWhiteSpace(imageLabel.filename) || imageLabel.labels == null || imageLabel.labels.Count == 0)
-                        continue;
-
-                    var labels = imageLabel.labels
-                        .Select(l => l.Trim().ToLower())
-                        .Where(l => !string.IsNullOrWhiteSpace(l))
-                        .ToList();
-
-                    if (labels.Count > 0)
-                    {
-                        _imageLabels[imageLabel.filename] = labels;
-                        _allImages.Add(imageLabel.filename);
-                        loadedCount++;
-                    }
-                }
-
-                Utils.Logger.Log($"[VectorRetriever] Loaded {loadedCount} labeled images from {labelFilePath}");
-
-                // 预计算所有标签的向量嵌入
-                _ = PrecomputeLabelEmbeddingsAsync();
+                LoadLabels(labelData.images
+                    .Where(i => !string.IsNullOrWhiteSpace(i.filename) && i.labels != null)
+                    .GroupBy(i => i.filename)
+                    .ToDictionary(g => g.Key, g => g.Last().labels), labelFilePath);
             }
             catch (Exception ex)
             {
                 Utils.Logger.Log($"[VectorRetriever] Error loading labels: {ex.Message}");
             }
+        }
+
+        public void LoadLabels(IDictionary<string, List<string>> imageLabels, string source)
+        {
+            int loadedCount = 0;
+            foreach (var entry in imageLabels)
+            {
+                if (string.IsNullOrWhiteSpace(entry.Key) || entry.Value == null || entry.Value.Count == 0)
+                    continue;
+
+                var labels = entry.Value
+                    .Where(l => !string.IsNullOrWhiteSpace(l))
+                    .Select(l => l.Trim().ToLower())
+                    .ToList();
+
+                if (labels.Count > 0)
+                {
+                    if (!_imageLabels.ContainsKey(entry.Key))
+                        _allImages.Add(entry.Key);
+                    _imageLabels[entry.Key] = labels;
+                    loadedCount++;
+                }
+            }
+
+            Utils.Logger.Log($"[VectorRetriever] Loaded {loadedCount} labeled images from {source}");
+
+            // 预计算所有标签的向量嵌入
+            _ = PrecomputeLabelEmbeddingsAsync();
         }
 
         /// <summary>

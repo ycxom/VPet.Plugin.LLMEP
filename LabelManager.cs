@@ -8,74 +8,82 @@ using VPet.Plugin.LLMEP.Utils;
 namespace VPet.Plugin.LLMEP
 {
     /// <summary>
-    /// 表情包标签管理器
+    /// 表情包标签管理器。
+    ///
+    /// DIY 图片平铺在 文档\VPetLLM\Emotion\（见 <see cref="DiyStickerStorage"/>），
+    /// 标签文件以文件名为键。标签分三类：
+    ///   · 心情标签 happy / normal / poor / ill —— 决定图片在哪些心情下出现，可多选；一个都没有 = 泛用；
+    ///   · 保留标签 general（等同于没有心情标签）、__llm_processed__（AI 已处理标记）—— 不参与匹配；
+    ///   · 其余为普通标签，供情感分析做精确匹配。
+    /// 设置窗口（UI 线程）和 AI 批量打标（后台线程）共用同一个实例，所有读写都加锁。
     /// </summary>
     public class LabelManager
     {
+        public const string MoodHappy = "happy";
+        public const string MoodNormal = "normal";
+        public const string MoodPoor = "poor";
+        public const string MoodIll = "ill";
+        public const string GeneralTag = "general";
+        public const string LlmProcessedTag = "__llm_processed__";
+
+        /// <summary>全部心情标签，按界面显示顺序。</summary>
+        public static readonly string[] MoodTags = { MoodHappy, MoodNormal, MoodPoor, MoodIll };
+
         private readonly string diyExpressionPath;
         private readonly string labelFilePath;
+        private readonly object _sync = new object();
         private Dictionary<string, List<string>> imageLabels;
 
-        public LabelManager(string pluginDirectory)
+        public LabelManager()
         {
-            diyExpressionPath = Path.Combine(pluginDirectory, "DIY_Expression");
-            labelFilePath = Path.Combine(pluginDirectory, "plugin", "data", "diy_labels.json");
+            diyExpressionPath = DiyStickerStorage.RootPath;
+            labelFilePath = DiyStickerStorage.LabelsFilePath;
             imageLabels = new Dictionary<string, List<string>>();
         }
 
-        /// <summary>
-        /// 扫描DIY_Expression目录下的所有图片
-        /// </summary>
-        /// <returns>按目录分组的图片文件列表</returns>
-        public Dictionary<string, List<ImageInfo>> ScanImages()
+        public static bool IsMoodTag(string tag) =>
+            tag != null && MoodTags.Contains(tag.Trim(), StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>不参与匹配的标签（general、AI 处理标记），也不应出现在给模型的候选标签里。</summary>
+        public static bool IsReservedTag(string tag) =>
+            tag != null && (string.Equals(tag.Trim(), GeneralTag, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(tag.Trim(), LlmProcessedTag, StringComparison.Ordinal));
+
+        /// <summary>心情标签的中文显示名。</summary>
+        public static string MoodDisplayName(string mood) => mood?.ToLowerInvariant() switch
         {
-            var result = new Dictionary<string, List<ImageInfo>>();
+            MoodHappy => "开心",
+            MoodNormal => "正常",
+            MoodPoor => "状态不佳",
+            MoodIll => "生病",
+            _ => "泛用"
+        };
+
+        /// <summary>
+        /// 扫描 DIY 目录下的全部图片（单层）。
+        /// </summary>
+        public List<ImageInfo> ScanImages()
+        {
+            var result = new List<ImageInfo>();
 
             try
             {
-                if (!Directory.Exists(diyExpressionPath))
+                DiyStickerStorage.EnsureRoot();
+
+                foreach (var file in DiyStickerStorage.EnumerateImages())
                 {
-                    Directory.CreateDirectory(diyExpressionPath);
-                    Logger.Info("LabelManager", $"创建DIY_Expression目录: {diyExpressionPath}");
+                    var relativePath = GetRelativePath(file);
+                    result.Add(new ImageInfo
+                    {
+                        FileName = Path.GetFileName(file),
+                        FullPath = file,
+                        RelativePath = relativePath,
+                        Size = new FileInfo(file).Length,
+                        Tags = GetImageTags(relativePath)
+                    });
                 }
 
-                var supportedExtensions = new[] { ".png", ".jpg", ".jpeg", ".gif", ".bmp" };
-
-                // 扫描所有子目录
-                var directories = Directory.GetDirectories(diyExpressionPath);
-
-                foreach (var directory in directories)
-                {
-                    var dirName = Path.GetFileName(directory);
-                    var imageFiles = new List<ImageInfo>();
-
-                    var files = Directory.GetFiles(directory)
-                        .Where(f => supportedExtensions.Contains(Path.GetExtension(f).ToLower()))
-                        .OrderBy(f => Path.GetFileName(f));
-
-                    foreach (var file in files)
-                    {
-                        var relativePath = GetRelativePath(file);
-                        var imageInfo = new ImageInfo
-                        {
-                            FileName = Path.GetFileName(file),
-                            FullPath = file,
-                            RelativePath = relativePath,
-                            Directory = dirName,
-                            Size = new FileInfo(file).Length,
-                            Tags = GetImageTags(relativePath)
-                        };
-
-                        imageFiles.Add(imageInfo);
-                    }
-
-                    if (imageFiles.Count > 0)
-                    {
-                        result[dirName] = imageFiles;
-                    }
-                }
-
-                Logger.Info("LabelManager", $"扫描完成，找到 {result.Values.Sum(list => list.Count)} 张图片，分布在 {result.Count} 个目录中");
+                Logger.Info("LabelManager", $"扫描完成，找到 {result.Count} 张图片");
             }
             catch (Exception ex)
             {
@@ -86,7 +94,7 @@ namespace VPet.Plugin.LLMEP
         }
 
         /// <summary>
-        /// 获取图片的相对路径（相对于DIY_Expression目录）
+        /// 获取图片的相对路径（相对于DIY表情包目录；单层目录下即文件名）
         /// </summary>
         private string GetRelativePath(string fullPath)
         {
@@ -98,32 +106,57 @@ namespace VPet.Plugin.LLMEP
         /// </summary>
         public List<string> GetImageTags(string relativePath)
         {
-            if (imageLabels.ContainsKey(relativePath))
+            lock (_sync)
             {
-                return new List<string>(imageLabels[relativePath]);
+                return imageLabels.TryGetValue(relativePath, out var tags)
+                    ? new List<string>(tags)
+                    : new List<string>();
             }
-            return new List<string>();
         }
 
         /// <summary>
-        /// 获取指定图片的心情标签
+        /// 图片用于哪些心情（小写心情标签）。空集合 = 泛用。
         /// </summary>
-        public string GetImageEmotion(string relativePath)
+        public List<string> GetImageMoods(string relativePath)
         {
-            var tags = GetImageTags(relativePath);
-            var emotionTags = new[] { "happy", "normal", "poor", "ill" };
-            var emotionTag = tags.FirstOrDefault(tag => emotionTags.Contains(tag.ToLower()));
-            return emotionTag?.ToLower() ?? "general";
+            return GetImageTags(relativePath)
+                .Where(IsMoodTag)
+                .Select(t => t.Trim().ToLowerInvariant())
+                .Distinct()
+                .OrderBy(t => Array.IndexOf(MoodTags, t))
+                .ToList();
         }
 
         /// <summary>
-        /// 获取指定图片的普通标签（排除心情标签）
+        /// 只改心情标签，普通标签和 AI 处理标记原样保留。
+        /// </summary>
+        public void SetImageMoods(string relativePath, IEnumerable<string> moods)
+        {
+            lock (_sync)
+            {
+                var kept = GetImageTags(relativePath).Where(t => !IsMoodTag(t) && !string.Equals(t, GeneralTag, StringComparison.OrdinalIgnoreCase));
+                SetImageTags(relativePath, kept.Concat(moods.Where(IsMoodTag)).ToList());
+            }
+        }
+
+        /// <summary>
+        /// 获取指定图片的普通标签（排除心情标签和保留标签）
         /// </summary>
         public List<string> GetImageNormalTags(string relativePath)
         {
-            var tags = GetImageTags(relativePath);
-            var emotionTags = new[] { "general", "happy", "normal", "poor", "ill" };
-            return tags.Where(tag => !emotionTags.Contains(tag.ToLower())).ToList();
+            return GetImageTags(relativePath).Where(tag => !IsMoodTag(tag) && !IsReservedTag(tag)).ToList();
+        }
+
+        /// <summary>
+        /// 只改普通标签，心情标签和 AI 处理标记原样保留。
+        /// </summary>
+        public void SetImageNormalTags(string relativePath, IEnumerable<string> normalTags)
+        {
+            lock (_sync)
+            {
+                var kept = GetImageTags(relativePath).Where(t => IsMoodTag(t) || string.Equals(t, LlmProcessedTag, StringComparison.Ordinal));
+                SetImageTags(relativePath, normalTags.Where(t => !IsMoodTag(t) && !IsReservedTag(t)).Concat(kept).ToList());
+            }
         }
 
         /// <summary>
@@ -131,21 +164,25 @@ namespace VPet.Plugin.LLMEP
         /// </summary>
         public void SetImageTags(string relativePath, List<string> tags)
         {
-            // 清理标签：去除空白、去重、排序
+            // 清理标签：去除空白、去重、排序；心情标签统一成小写
             var cleanTags = tags
                 .Where(tag => !string.IsNullOrWhiteSpace(tag))
                 .Select(tag => tag.Trim())
+                .Select(tag => IsMoodTag(tag) ? tag.ToLowerInvariant() : tag)
                 .Distinct()
                 .OrderBy(tag => tag)
                 .ToList();
 
-            if (cleanTags.Count > 0)
+            lock (_sync)
             {
-                imageLabels[relativePath] = cleanTags;
-            }
-            else if (imageLabels.ContainsKey(relativePath))
-            {
-                imageLabels.Remove(relativePath);
+                if (cleanTags.Count > 0)
+                {
+                    imageLabels[relativePath] = cleanTags;
+                }
+                else
+                {
+                    imageLabels.Remove(relativePath);
+                }
             }
 
             Logger.Debug("LabelManager", $"设置图片标签: {relativePath} -> [{string.Join(", ", cleanTags)}]");
@@ -165,8 +202,11 @@ namespace VPet.Plugin.LLMEP
 
                     if (loadedLabels != null)
                     {
-                        imageLabels = loadedLabels;
-                        Logger.Info("LabelManager", $"从文件加载了 {imageLabels.Count} 个图片的标签数据");
+                        lock (_sync)
+                        {
+                            imageLabels = loadedLabels;
+                        }
+                        Logger.Info("LabelManager", $"从文件加载了 {loadedLabels.Count} 个图片的标签数据");
                     }
                 }
                 else
@@ -177,18 +217,20 @@ namespace VPet.Plugin.LLMEP
             catch (Exception ex)
             {
                 Logger.Error("LabelManager", $"加载标签文件时发生错误: {ex.Message}");
-                imageLabels = new Dictionary<string, List<string>>();
+                lock (_sync)
+                {
+                    imageLabels = new Dictionary<string, List<string>>();
+                }
             }
         }
 
         /// <summary>
-        /// 保存标签数据到文件
+        /// 保存标签数据到文件。先写临时文件再替换，写到一半崩溃也不会把标签文件弄坏。
         /// </summary>
         public void SaveLabels()
         {
             try
             {
-                // 确保目录存在
                 var directory = Path.GetDirectoryName(labelFilePath);
                 if (!Directory.Exists(directory))
                 {
@@ -201,14 +243,24 @@ namespace VPet.Plugin.LLMEP
                     Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
                 };
 
-                var json = JsonSerializer.Serialize(imageLabels, options);
-                File.WriteAllText(labelFilePath, json);
+                string json;
+                int count;
+                lock (_sync)
+                {
+                    json = JsonSerializer.Serialize(imageLabels, options);
+                    count = imageLabels.Count;
+                }
 
-                Logger.Info("LabelManager", $"保存了 {imageLabels.Count} 个图片的标签数据到文件: {labelFilePath}");
+                var tempPath = labelFilePath + ".tmp";
+                File.WriteAllText(tempPath, json);
+                File.Move(tempPath, labelFilePath, overwrite: true);
+
+                Logger.Info("LabelManager", $"保存了 {count} 个图片的标签数据到文件: {labelFilePath}");
             }
             catch (Exception ex)
             {
                 Logger.Error("LabelManager", $"保存标签文件时发生错误: {ex.Message}");
+                throw;
             }
         }
 
@@ -219,17 +271,13 @@ namespace VPet.Plugin.LLMEP
         {
             var tagCounts = new Dictionary<string, int>();
 
-            foreach (var imageTags in imageLabels.Values)
+            lock (_sync)
             {
-                foreach (var tag in imageTags)
+                foreach (var imageTags in imageLabels.Values)
                 {
-                    if (tagCounts.ContainsKey(tag))
+                    foreach (var tag in imageTags)
                     {
-                        tagCounts[tag]++;
-                    }
-                    else
-                    {
-                        tagCounts[tag] = 1;
+                        tagCounts[tag] = tagCounts.TryGetValue(tag, out var c) ? c + 1 : 1;
                     }
                 }
             }
@@ -243,8 +291,7 @@ namespace VPet.Plugin.LLMEP
         /// </summary>
         public bool IsImageProcessedByLLM(string relativePath)
         {
-            var tags = GetImageTags(relativePath);
-            return tags.Contains("__llm_processed__");
+            return GetImageTags(relativePath).Contains(LlmProcessedTag);
         }
 
         /// <summary>
@@ -252,91 +299,15 @@ namespace VPet.Plugin.LLMEP
         /// </summary>
         public void MarkImageAsProcessedByLLM(string relativePath)
         {
-            var tags = GetImageTags(relativePath);
-            if (!tags.Contains("__llm_processed__"))
+            lock (_sync)
             {
-                tags.Add("__llm_processed__");
-                SetImageTags(relativePath, tags);
-                Logger.Info("LabelManager", $"标记图片为已处理: {relativePath}");
-            }
-        }
-
-        /// <summary>
-        /// 创建空的label.json文件（如果不存在）
-        /// </summary>
-        public void CreateEmptyLabelFileIfNotExists()
-        {
-            try
-            {
-                if (!File.Exists(labelFilePath))
+                var tags = GetImageTags(relativePath);
+                if (!tags.Contains(LlmProcessedTag))
                 {
-                    var emptyLabels = new Dictionary<string, List<string>>();
-                    var options = new JsonSerializerOptions
-                    {
-                        WriteIndented = true,
-                        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-                    };
-
-                    var json = JsonSerializer.Serialize(emptyLabels, options);
-                    File.WriteAllText(labelFilePath, json);
-
-                    Logger.Info("LabelManager", $"创建空的标签文件: {labelFilePath}");
+                    tags.Add(LlmProcessedTag);
+                    SetImageTags(relativePath, tags);
+                    Logger.Info("LabelManager", $"标记图片为已处理: {relativePath}");
                 }
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("LabelManager", $"创建标签文件时发生错误: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 创建示例目录结构（如果DIY_Expression为空）
-        /// </summary>
-        public void CreateExampleDirectories()
-        {
-            try
-            {
-                if (!Directory.Exists(diyExpressionPath))
-                {
-                    Directory.CreateDirectory(diyExpressionPath);
-                }
-
-                // 检查是否已有内容
-                var existingDirs = Directory.GetDirectories(diyExpressionPath);
-                var existingFiles = Directory.GetFiles(diyExpressionPath, "*.*", SearchOption.AllDirectories)
-                    .Where(f => new[] { ".png", ".jpg", ".jpeg", ".gif", ".bmp" }.Contains(Path.GetExtension(f).ToLower()))
-                    .ToArray();
-
-                if (existingDirs.Length > 0 || existingFiles.Length > 0)
-                {
-                    return; // 已有内容，不创建示例
-                }
-
-                // 只创建一个通用目录
-                var generalDirPath = Path.Combine(diyExpressionPath, "General");
-                if (!Directory.Exists(generalDirPath))
-                {
-                    Directory.CreateDirectory(generalDirPath);
-
-                    // 创建说明文件
-                    var readmePath = Path.Combine(generalDirPath, "README.txt");
-                    var readmeContent = "通用表情包目录\n" +
-                                      "请将表情包图片放在这里，支持格式：PNG、JPG、GIF、JPEG、BMP\n" +
-                                      "可以通过标签管理面板为每张图片设置心情标签：\n" +
-                                      "- happy: 开心\n" +
-                                      "- normal: 正常\n" +
-                                      "- poor: 状态不佳\n" +
-                                      "- ill: 生病\n" +
-                                      "- general: 泛用（默认）\n\n" +
-                                      "如果图片没有设置心情标签，将作为泛用表情包使用。";
-
-                    File.WriteAllText(readmePath, readmeContent);
-                    Logger.Info("LabelManager", "创建了通用表情包目录: General");
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.Error("LabelManager", $"创建示例目录时发生错误: {ex.Message}");
             }
         }
     }
@@ -349,7 +320,6 @@ namespace VPet.Plugin.LLMEP
         public string FileName { get; set; }
         public string FullPath { get; set; }
         public string RelativePath { get; set; }
-        public string Directory { get; set; }
         public long Size { get; set; }
         public List<string> Tags { get; set; } = new List<string>();
 

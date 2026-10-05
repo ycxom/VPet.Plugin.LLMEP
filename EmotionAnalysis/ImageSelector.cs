@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
-using System.Windows.Media.Imaging;
+using VPet.Plugin.LLMEP.Utils;
 
 namespace VPet.Plugin.LLMEP.EmotionAnalysis
 {
@@ -47,8 +47,8 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                     Utils.Logger.Warning("ImageSelector", $"内置表情包目录不存在: {builtInPath}");
                 }
 
-                // 扫描DIY_Expression目录
-                string diyPath = Path.Combine(dllPath, "DIY_Expression");
+                // 扫描DIY表情包目录（文档\VPetLLM\Emotion）
+                string diyPath = DiyStickerStorage.RootPath;
                 if (Directory.Exists(diyPath))
                 {
                     Utils.Logger.Debug("ImageSelector", $"扫描DIY表情包目录: {diyPath}");
@@ -116,7 +116,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 Utils.Logger.Debug("ImageSelector", "准备调用情感分析器...");
 
                 // 使用情感分析器获取匹配的图片
-                var selectedImage = await emotionAnalyzer.AnalyzeEmotionAndGetImageAsync(text);
+                var selectedImage = await emotionAnalyzer.AnalyzeEmotionAndGetImagePathAsync(text);
 
                 Utils.Logger.Debug("ImageSelector", "情感分析器调用完成");
 
@@ -129,8 +129,8 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 {
                     Utils.Logger.Debug("ImageSelector", "情感分析未获得匹配图片，使用降级策略");
 
-                    // 降级：使用当前心情的随机图片
-                    selectedImage = _imageMgr.GetCurrentMoodImagePublic();
+                    // 降级：使用当前心情的随机图片（在线表情包已显示时，自动触发会被忙碌检查挡掉，不会再叠一张）
+                    selectedImage = _imageMgr.GetCurrentMoodImagePath();
 
                     if (selectedImage != null)
                     {
@@ -166,7 +166,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 Utils.Logger.Debug("ImageSelector", "调用向量检索器查找匹配图片");
                 var matchingImages = await _vectorRetriever.FindMatchingImagesAsync(emotions, topK: 3);
 
-                BitmapImage selectedImage = null;
+                string selectedImage = null;
 
                 if (matchingImages != null && matchingImages.Count > 0)
                 {
@@ -179,16 +179,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                     if (_imagePathCache.TryGetValue(selectedFilename, out string imagePath))
                     {
                         Utils.Logger.Debug("ImageSelector", $"找到图片路径: {imagePath}");
-                        selectedImage = LoadImage(imagePath);
-
-                        if (selectedImage != null)
-                        {
-                            Utils.Logger.Debug("ImageSelector", $"图片加载成功: {selectedFilename}");
-                        }
-                        else
-                        {
-                            Utils.Logger.Warning("ImageSelector", $"图片加载失败: {selectedFilename}");
-                        }
+                        selectedImage = imagePath;
                     }
                     else
                     {
@@ -206,7 +197,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                     Utils.Logger.Debug("ImageSelector", "使用降级策略，选择当前心情的随机图片");
 
                     // 直接调用 ImageMgr 的公共方法获取当前心情的图片
-                    selectedImage = _imageMgr.GetCurrentMoodImagePublic();
+                    selectedImage = _imageMgr.GetCurrentMoodImagePath();
 
                     if (selectedImage != null)
                     {
@@ -238,51 +229,17 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
         }
 
         /// <summary>
-        /// 加载图片
+        /// 显示图片。情感分析是自动触发：已有表情包在显示就放弃，不打断它。
+        /// 解码在 ImageMgr 里后台完成，到点自动隐藏，这里不再阻塞等待。
         /// </summary>
-        private BitmapImage LoadImage(string imagePath)
+        private async Task DisplayImageAsync(string imagePath)
         {
             try
             {
-                Utils.Logger.Debug("ImageSelector", $"开始加载图片: {imagePath}");
-
-                var bitmapImage = new BitmapImage();
-                bitmapImage.BeginInit();
-                bitmapImage.UriSource = new Uri(imagePath, UriKind.Absolute);
-                bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-                bitmapImage.EndInit();
-
-                Utils.Logger.Debug("ImageSelector", $"图片加载成功，尺寸: {bitmapImage.PixelWidth}x{bitmapImage.PixelHeight}");
-                return bitmapImage;
-            }
-            catch (Exception ex)
-            {
-                Utils.Logger.Error("ImageSelector", $"加载图片失败 {imagePath}: {ex.Message}");
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// 显示图片
-        /// </summary>
-        private async Task DisplayImageAsync(BitmapImage image)
-        {
-            try
-            {
-                Utils.Logger.Debug("ImageSelector", "开始显示图片");
-
-                // 使用公共方法显示图片
-                _imageMgr.DisplayImagePublic(image);
-
-                Utils.Logger.Debug("ImageSelector", $"图片将显示 {_imageMgr.Settings.GetDisplayDurationMs()}ms");
-
-                // 自动隐藏
-                await Task.Delay(_imageMgr.Settings.GetDisplayDurationMs());
-
-                Utils.Logger.Debug("ImageSelector", "开始隐藏图片");
-                _imageMgr.HideImagePublic();
-
-                Utils.Logger.Debug("ImageSelector", "图片显示周期完成");
+                Utils.Logger.Debug("ImageSelector", $"开始显示图片: {imagePath}");
+                bool shown = await _imageMgr.ShowStickerFileAsync(
+                    imagePath, _imageMgr.Settings.GetDisplayDurationMs(), interrupt: false, "情感分析");
+                Utils.Logger.Debug("ImageSelector", shown ? "图片已显示" : "图片未显示（已有表情包或解码失败）");
             }
             catch (Exception ex)
             {

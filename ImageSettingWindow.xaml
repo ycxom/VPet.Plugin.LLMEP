@@ -72,7 +72,7 @@
                         <!-- 表情包目录 -->
                         <GroupBox Header="表情包目录" Margin="0,0,0,20">
                             <StackPanel Margin="10">
-                                <TextBlock x:Name="TextBlockImagePath" Text="DIY_Expression/" FontFamily="Consolas" Background="#F5F5F5" Padding="5" Margin="0,5"/>
+                                <TextBlock x:Name="TextBlockImagePath" Text="文档\VPetLLM\Emotion" FontFamily="Consolas" Background="#F5F5F5" Padding="5" Margin="0,5" TextWrapping="Wrap"/>
                                 <Button x:Name="ButtonOpenFolder" Content="📁 打开表情包文件夹" Width="200" HorizontalAlignment="Left" Margin="0,5"
                                       Click="ButtonOpenFolder_Click"/>
                             </StackPanel>
@@ -288,18 +288,20 @@
                         <StackPanel Margin="10">
                             <CheckBox x:Name="CheckBoxAIImageTagging" Content="允许AI识别图片并生成标签" Margin="0,5"
                                     Checked="CheckBoxAIImageTagging_Changed" Unchecked="CheckBoxAIImageTagging_Changed"/>
-                            <TextBlock Text="ℹ️ 需要先在LLM设置中启用&quot;是可读取图片的模型&quot;，并配置支持Vision的LLM模型（如Gemini 2.5 flash等）" 
+                            <TextBlock Text="ℹ️ 需要先在LLM设置中启用&quot;是可读取图片的模型&quot;，并配置支持Vision的LLM模型（如Gemini 2.5 flash等）"
                                      Foreground="#666666" FontSize="12" Margin="20,5,0,0" TextWrapping="Wrap"/>
                             <TextBlock x:Name="TextBlockAIProcessingStatus" Text="状态: 等待开始" Margin="20,10,0,0" FontSize="12" Foreground="#0066CC"/>
                         </StackPanel>
                     </GroupBox>
 
                     <!-- 顶部操作栏 -->
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,15">
-                        <Button x:Name="ButtonScanImages" Content="🔍 扫描图片" Width="120" Margin="0,0,10,0" Click="ButtonScanImages_Click"/>
-                        <Button x:Name="ButtonSaveLabels" Content="💾 保存标签" Width="120" Click="ButtonSaveLabels_Click"/>
-                        <Button x:Name="ButtonStartAIProcessing" Content="🤖 开始AI处理" Width="120" Margin="10,0,0,0" Click="ButtonStartAIProcessing_Click"/>
-                    </StackPanel>
+                    <WrapPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,15">
+                        <Button x:Name="ButtonImportImages" Content="📥 导入图片" Width="110" Margin="0,0,10,5" Click="ButtonImportImages_Click"/>
+                        <Button x:Name="ButtonOpenEmotionFolder" Content="📁 打开文件夹" Width="110" Margin="0,0,10,5" Click="ButtonOpenFolder_Click"/>
+                        <Button x:Name="ButtonScanImages" Content="🔄 刷新" Width="90" Margin="0,0,10,5" Click="ButtonScanImages_Click"/>
+                        <Button x:Name="ButtonSaveLabels" Content="💾 保存标签" Width="110" Margin="0,0,10,5" Click="ButtonSaveLabels_Click"/>
+                        <Button x:Name="ButtonStartAIProcessing" Content="🤖 开始AI处理" Width="120" Margin="0,0,10,5" Click="ButtonStartAIProcessing_Click"/>
+                    </WrapPanel>
 
                     <!-- 主要内容区域 -->
                     <Grid Grid.Row="2">
@@ -308,54 +310,81 @@
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
 
-                        <!-- 左侧：图片树形列表 -->
-                        <GroupBox Grid.Column="0" Header="📁 图片目录" Margin="0,0,10,0">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                <TreeView x:Name="TreeViewImages" Background="Transparent" BorderThickness="0" SelectedItemChanged="TreeViewImages_SelectedItemChanged"/>
-                            </ScrollViewer>
+                        <!-- 左侧：表情包列表（单一文件夹 文档\VPetLLM\Emotion） -->
+                        <GroupBox Grid.Column="0" Header="🖼️ 表情包" Margin="0,0,10,0">
+                            <DockPanel Margin="4">
+                                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="按心情筛选:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <ComboBox x:Name="ComboBoxMoodFilter" Width="160" SelectionChanged="ComboBoxMoodFilter_SelectionChanged">
+                                        <ComboBoxItem Content="全部" Tag="all" IsSelected="True"/>
+                                        <ComboBoxItem Content="泛用（未指定心情）" Tag="general"/>
+                                        <ComboBoxItem Content="开心 (Happy)" Tag="happy"/>
+                                        <ComboBoxItem Content="正常 (Normal)" Tag="normal"/>
+                                        <ComboBoxItem Content="状态不佳 (Poor)" Tag="poor"/>
+                                        <ComboBoxItem Content="生病 (Ill)" Tag="ill"/>
+                                    </ComboBox>
+                                </StackPanel>
+                                <TextBlock DockPanel.Dock="Bottom" Text="按住 Ctrl / Shift 可多选，批量设置心情" FontSize="11" Foreground="#999999" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                                <ListBox x:Name="ListBoxImages" SelectionMode="Extended" SelectionChanged="ListBoxImages_SelectionChanged"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <DockPanel Margin="2">
+                                                <Border Width="44" Height="44" Background="#F5F5F5" CornerRadius="4" Margin="0,0,8,0" DockPanel.Dock="Left">
+                                                    <Image Source="{Binding Thumbnail}" Stretch="Uniform"/>
+                                                </Border>
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Text="{Binding MoodSummary}" FontSize="11" Foreground="#888888" TextTrimming="CharacterEllipsis"/>
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </DockPanel>
                         </GroupBox>
 
-                        <!-- 右侧：图片预览和标签编辑 -->
+                        <!-- 右侧：图片预览、心情与标签 -->
                         <GroupBox Grid.Column="1" Header="🖼️ 图片详情" Margin="10,0,0,0">
                             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                                 <Grid>
                                     <!-- 空状态显示 -->
-                                    <StackPanel x:Name="PanelEmptyState" 
-                                              HorizontalAlignment="Center" 
+                                    <StackPanel x:Name="PanelEmptyState"
+                                              HorizontalAlignment="Center"
                                               VerticalAlignment="Center"
                                               Visibility="Visible">
                                         <TextBlock Text="📷" FontSize="48" HorizontalAlignment="Center" Foreground="#CCCCCC" Margin="0,0,0,16"/>
-                                        <TextBlock Text="选择图片开始编辑标签" FontSize="16" HorizontalAlignment="Center" Foreground="#999999"/>
+                                        <TextBlock Text="在左侧选择表情包，设置它用于哪些心情" FontSize="16" HorizontalAlignment="Center" Foreground="#999999" TextWrapping="Wrap"/>
                                     </StackPanel>
 
                                     <!-- 图片详情面板 -->
                                     <StackPanel x:Name="PanelImageDetails" Visibility="Collapsed">
-                                        <TextBlock x:Name="TextBlockImageTitle" Text="🖼️ 选择图片查看预览" FontSize="16" FontWeight="Bold" Margin="0,0,0,10"/>
-                                        
+                                        <TextBlock x:Name="TextBlockImageTitle" Text="🖼️ 选择图片查看预览" FontSize="16" FontWeight="Bold" Margin="0,0,0,10" TextTrimming="CharacterEllipsis"/>
+
                                         <!-- 图片预览 -->
-                                        <Border Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="1" Padding="8" Margin="0,0,0,10" MaxHeight="200">
+                                        <Border Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="1" Padding="8" Margin="0,0,0,10" Height="200">
                                             <Image x:Name="ImagePreview" Stretch="Uniform" StretchDirection="DownOnly"/>
                                         </Border>
 
                                         <!-- 图片信息 -->
-                                        <TextBlock x:Name="TextBlockFileName" Text="文件名: " FontSize="12" Foreground="#666666" Margin="0,0,0,4"/>
+                                        <TextBlock x:Name="TextBlockFileName" Text="文件名: " FontSize="12" Foreground="#666666" Margin="0,0,0,4" TextWrapping="Wrap"/>
                                         <TextBlock x:Name="TextBlockFileSize" Text="大小: " FontSize="12" Foreground="#666666" Margin="0,0,0,10"/>
-                                        
+
+                                        <!-- 心情选择（可多选） -->
+                                        <TextBlock Text="💭 用于哪些心情" FontSize="14" FontWeight="Bold" Margin="0,0,0,5"/>
+                                        <TextBlock x:Name="TextBlockMoodHint" Text="可多选；一个都不勾时作为泛用表情包，任何心情下都可能出现" FontSize="12" Foreground="#999999" Margin="0,0,0,5" TextWrapping="Wrap"/>
+                                        <WrapPanel Margin="0,0,0,12">
+                                            <CheckBox x:Name="CheckBoxMoodHappy" Content="开心" Tag="happy" Margin="0,4,18,4" Click="MoodCheckBox_Click"/>
+                                            <CheckBox x:Name="CheckBoxMoodNormal" Content="正常" Tag="normal" Margin="0,4,18,4" Click="MoodCheckBox_Click"/>
+                                            <CheckBox x:Name="CheckBoxMoodPoor" Content="状态不佳" Tag="poor" Margin="0,4,18,4" Click="MoodCheckBox_Click"/>
+                                            <CheckBox x:Name="CheckBoxMoodIll" Content="生病" Tag="ill" Margin="0,4,18,4" Click="MoodCheckBox_Click"/>
+                                        </WrapPanel>
+
                                         <!-- 标签编辑区域 -->
                                         <TextBlock Text="🏷️ 图片标签" FontSize="14" FontWeight="Bold" Margin="0,0,0,5"/>
-                                        <TextBlock Text="用逗号分隔多个标签，如：开心,笑脸,高兴" FontSize="12" Foreground="#999999" Margin="0,0,0,5"/>
-                                        <TextBox x:Name="TextBoxImageTags" Height="60" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" TextChanged="TextBoxImageTags_TextChanged" Margin="0,0,0,10"/>
-                                        
-                                        <!-- 心情选择 -->
-                                        <TextBlock Text="💭 心情分类" FontSize="14" FontWeight="Bold" Margin="0,0,0,5"/>
-                                        <TextBlock Text="选择此图片对应的心情，未选择时作为泛用表情包" FontSize="12" Foreground="#999999" Margin="0,0,0,5"/>
-                                        <ComboBox x:Name="ComboBoxEmotion" SelectionChanged="ComboBoxEmotion_SelectionChanged">
-                                            <ComboBoxItem Content="泛用 (General)" Tag="general"/>
-                                            <ComboBoxItem Content="开心 (Happy)" Tag="happy"/>
-                                            <ComboBoxItem Content="正常 (Normal)" Tag="normal"/>
-                                            <ComboBoxItem Content="状态不佳 (Poor)" Tag="poor"/>
-                                            <ComboBoxItem Content="生病 (Ill)" Tag="ill"/>
-                                        </ComboBox>
+                                        <TextBlock x:Name="TextBlockTagsHint" Text="用逗号分隔多个标签，如：开心,笑脸,高兴（用于情感分析精确匹配）" FontSize="12" Foreground="#999999" Margin="0,0,0,5" TextWrapping="Wrap"/>
+                                        <TextBox x:Name="TextBoxImageTags" Height="60" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" LostFocus="TextBoxImageTags_LostFocus" Margin="0,0,0,10"/>
                                     </StackPanel>
                                 </Grid>
                             </ScrollViewer>
