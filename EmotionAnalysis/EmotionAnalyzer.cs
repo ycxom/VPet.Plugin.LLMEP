@@ -24,25 +24,29 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
         private string _emotionLabelsPrompt = "";
         private string _imageTagsPrompt = "";
 
-        public EmotionAnalyzer(ILLMClient llmClient, CacheManager cacheManager, IMainWindow mainWindow, ImageMgr imageMgr, string emotionLabelsPath = null)
+        public EmotionAnalyzer(ILLMClient llmClient, CacheManager cacheManager, IMainWindow mainWindow, ImageMgr imageMgr)
         {
             _llmClient = llmClient;
             _cacheManager = cacheManager;
             _mainWindow = mainWindow;
             _imageMgr = imageMgr;
 
-            // 加载情感标签提示词
-            if (!string.IsNullOrEmpty(emotionLabelsPath) && File.Exists(emotionLabelsPath))
-            {
-                LoadEmotionLabelsPrompt(emotionLabelsPath);
-            }
-
-            // 构建图片标签提示词
+            // 构建两种模式的候选标签提示词
             BuildImageTagsPrompt();
         }
 
         /// <summary>
-        /// 构建图片标签提示词
+        /// 表情包标签变了（标签管理面板保存、导入图片、AI 打标完成）之后重建候选标签。
+        /// </summary>
+        public void RefreshTagPrompts() => BuildImageTagsPrompt();
+
+        /// <summary>
+        /// 构建图片标签提示词。精确模式和传统模式用同一份候选标签：
+        /// 内置表情包的 VPet_Expression\label.json（MOD 自带的只读数据）+ DIY 标签。
+        ///
+        /// 以前传统模式的候选来自 plugin\data\emotion_labels.json —— 那是个 0 字节空文件，
+        /// 每次解析失败，传统模式发给模型的提示里根本没有候选标签，只能让它自由发挥，
+        /// 返回的词和表情包标签对不上，向量匹配基本落空。
         /// </summary>
         private void BuildImageTagsPrompt()
         {
@@ -91,11 +95,14 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
 
 文本内容：";
 
+                    _emotionLabelsPrompt = $"\n\n可用的情感标签列表：{string.Join("、", tagList)}\n\n请从上述标签中选择1-3个最相关的标签。";
+
                     _imageMgr.LogDebug("EmotionAnalyzer", $"图片标签提示词已构建，包含 {allTags.Count} 个标签");
                 }
                 else
                 {
                     _imageTagsPrompt = "";
+                    _emotionLabelsPrompt = "";
                     _imageMgr.LogWarning("EmotionAnalyzer", "未找到可用的图片标签");
                 }
             }
@@ -103,6 +110,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
             {
                 _imageMgr.LogError("EmotionAnalyzer", $"构建图片标签提示词失败: {ex.Message}");
                 _imageTagsPrompt = "";
+                _emotionLabelsPrompt = "";
             }
         }
 
@@ -199,64 +207,6 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                 _imageMgr.LogError("EmotionAnalyzer", $"提取DIY标签失败: {labelFilePath}, 错误: {ex.Message}");
             }
         }
-        /// <summary>
-        /// 加载情感标签提示词
-        /// </summary>
-        private void LoadEmotionLabelsPrompt(string path)
-        {
-            try
-            {
-                var jsonContent = File.ReadAllText(path);
-                using (JsonDocument doc = JsonDocument.Parse(jsonContent))
-                {
-                    var root = doc.RootElement;
-
-                    // 提取所有标签
-                    var allLabels = new List<string>();
-                    if (root.TryGetProperty("categories", out var categories))
-                    {
-                        foreach (var category in categories.EnumerateObject())
-                        {
-                            if (category.Value.ValueKind == JsonValueKind.Array)
-                            {
-                                // 处理角色名称这种直接数组
-                                foreach (var label in category.Value.EnumerateArray())
-                                {
-                                    allLabels.Add(label.GetString());
-                                }
-                            }
-                            else if (category.Value.ValueKind == JsonValueKind.Object)
-                            {
-                                // 处理嵌套的子分类
-                                foreach (var subCategory in category.Value.EnumerateObject())
-                                {
-                                    if (subCategory.Value.ValueKind == JsonValueKind.Array)
-                                    {
-                                        foreach (var label in subCategory.Value.EnumerateArray())
-                                        {
-                                            allLabels.Add(label.GetString());
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // 构建提示词
-                    if (allLabels.Count > 0)
-                    {
-                        _emotionLabelsPrompt = $"\n\n可用的情感标签列表：{string.Join("、", allLabels)}\n\n请从上述标签中选择1-3个最相关的标签。";
-                        Utils.Logger.Log($"[EmotionAnalyzer] 已加载 {allLabels.Count} 个情感标签");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Utils.Logger.Log($"[EmotionAnalyzer] 加载情感标签失败: {ex.Message}");
-                _emotionLabelsPrompt = "";
-            }
-        }
-
         /// <summary>
         /// 分析情感并返回匹配的图片（支持精确标签匹配）
         /// </summary>

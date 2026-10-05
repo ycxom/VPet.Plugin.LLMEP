@@ -83,6 +83,10 @@ namespace VPet.Plugin.LLMEP
             // 状态里带原因（缺原生组件 / 架构不匹配），直接记下来省得回头再猜
             Logger.Info("ImageMgr", $"官方服务鉴权通道: {AuthenticatedServiceTransport.StatusMessage}");
 
+            // 设置、情感分析缓存、日志从 MOD 目录迁到 文档\VPetLLM\Emotion\data。
+            // 必须在读取设置之前：以前的迁移放在 LoadPlugin 里，比读设置晚，迁移那次启动读到的是默认设置
+            DiyStickerStorage.MigratePluginData(LoaddllPath());
+
             // 初始化设置
             InitializeSettings();
         }
@@ -120,9 +124,6 @@ namespace VPet.Plugin.LLMEP
             {
                 // 初始化日志系统
                 InitializeLogger();
-
-                // 迁移旧的数据文件到新目录
-                MigrateOldDataFiles();
 
                 // DIY 表情包从 MOD 目录迁到 文档\VPetLLM\Emotion\（一次性；工坊目录会被 Steam 更新覆盖）
                 DiyStickerStorage.Migrate(LoaddllPath());
@@ -487,83 +488,22 @@ namespace VPet.Plugin.LLMEP
         }
 
         /// <summary>
-        /// 获取插件数据目录路径
+        /// 插件数据目录（设置、情感分析缓存、日志）：文档\VPetLLM\Emotion\data。
+        /// 不再放 MOD 目录：创意工坊更新会清掉发布包以外的文件。
         /// </summary>
         public string GetDataDirectoryPath()
         {
             try
             {
-                string dllPath = LoaddllPath();
-                string dataPath = Path.Combine(dllPath, "plugin", "data");
-
-                // 确保目录存在
-                if (!Directory.Exists(dataPath))
-                {
-                    Directory.CreateDirectory(dataPath);
-                    Utils.Logger.Info("ImageMgr", $"创建数据目录: {dataPath}");
-                }
-
-                return dataPath;
+                return DiyStickerStorage.EnsureDataPath();
             }
             catch (Exception ex)
             {
-                Utils.Logger.Error("ImageMgr", $"获取数据目录失败: {ex.Message}");
-                return LoaddllPath(); // 降级到根目录
-            }
-        }
-
-        /// <summary>
-        /// 迁移旧的数据文件到新的数据目录
-        /// </summary>
-        private void MigrateOldDataFiles()
-        {
-            try
-            {
-                string dllPath = LoaddllPath();
-                string dataPath = GetDataDirectoryPath();
-
-                // 迁移设置文件
-                string oldSettingsPath = Path.Combine(dllPath, "settings.json");
-                string newSettingsPath = Path.Combine(dataPath, "settings.json");
-                MigrateFile(oldSettingsPath, newSettingsPath, "设置文件");
-
-                // 迁移缓存文件
-                string oldCachePath = Path.Combine(dllPath, "emotion_cache.json");
-                string newCachePath = Path.Combine(dataPath, "emotion_cache.json");
-                MigrateFile(oldCachePath, newCachePath, "缓存文件");
-
-                // 迁移缓存版本文件
-                string oldVersionPath = Path.Combine(dllPath, "emotion_cache.version");
-                string newVersionPath = Path.Combine(dataPath, "emotion_cache.version");
-                MigrateFile(oldVersionPath, newVersionPath, "缓存版本文件");
-
-                // 迁移日志文件
-                string oldLogPath = Path.Combine(dllPath, "VPet.Plugin.LLMEP.log");
-                string newLogPath = Path.Combine(dataPath, "VPet.Plugin.LLMEP.log");
-                MigrateFile(oldLogPath, newLogPath, "日志文件");
-            }
-            catch (Exception ex)
-            {
-                Utils.Logger.Warning("ImageMgr", $"数据文件迁移过程中出现错误: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 迁移单个文件
-        /// </summary>
-        private void MigrateFile(string oldPath, string newPath, string fileDescription)
-        {
-            try
-            {
-                if (File.Exists(oldPath) && !File.Exists(newPath))
-                {
-                    File.Move(oldPath, newPath);
-                    Utils.Logger.Info("ImageMgr", $"已迁移{fileDescription}: {oldPath} -> {newPath}");
-                }
-            }
-            catch (Exception ex)
-            {
-                Utils.Logger.Warning("ImageMgr", $"迁移{fileDescription}失败: {ex.Message}");
+                // 文档目录不可写时退回旧位置，至少本次还能读写设置
+                Utils.Logger.Error("ImageMgr", $"创建数据目录失败，退回 MOD 目录: {ex.Message}");
+                string fallback = Path.Combine(LoaddllPath(), "plugin", "data");
+                Directory.CreateDirectory(fallback);
+                return fallback;
             }
         }
 
@@ -886,6 +826,7 @@ namespace VPet.Plugin.LLMEP
             LoadImgae();
             labelImageMatcher?.LoadLabels();
             imageSelector?.BuildImagePathCache();
+            (emotionAnalyzer as EmotionAnalyzer)?.RefreshTagPrompts();
         }
 
         /// <summary>
@@ -1334,26 +1275,16 @@ namespace VPet.Plugin.LLMEP
 
                 // 创建缓存管理器
                 string dataPath = GetDataDirectoryPath();
-                string dllPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                // MOD 根目录（VPet_Expression 所在）。以前这里取的是 DLL 所在的 plugin 目录，
+                // 拼出来的 plugin\VPet_Expression\label.json 不存在，向量匹配从没加载过内置表情包标签
+                string dllPath = LoaddllPath();
                 string cachePath = Path.Combine(dataPath, "emotion_cache.json");
                 cacheManager = new CacheManager(cachePath);
                 cacheManager.Load();
                 LogMessage($"缓存管理器已加载: {cachePath}");
 
-                // 加载情感标签参考文件路径
-                string emotionLabelsPath = Path.Combine(dllPath, "plugin", "data", "emotion_labels.json");
-                if (File.Exists(emotionLabelsPath))
-                {
-                    LogMessage($"找到情感标签参考文件: {emotionLabelsPath}");
-                }
-                else
-                {
-                    LogMessage($"警告：情感标签参考文件不存在: {emotionLabelsPath}");
-                    emotionLabelsPath = null;
-                }
-
-                // 创建情感分析器（传入ImageMgr参数以支持标签匹配）
-                emotionAnalyzer = new EmotionAnalyzer(llmClient, cacheManager, MW, this, emotionLabelsPath);
+                // 创建情感分析器（候选标签取自 VPet_Expression\label.json 和 DIY 标签）
+                emotionAnalyzer = new EmotionAnalyzer(llmClient, cacheManager, MW, this);
                 LogMessage("情感分析器已创建");
 
                 // 创建标签图片匹配器

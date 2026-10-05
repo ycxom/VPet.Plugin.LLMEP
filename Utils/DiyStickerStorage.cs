@@ -42,6 +42,20 @@ namespace VPet.Plugin.LLMEP.Utils
         /// <summary>标签文件：{ "文件名": ["标签", ...] }</summary>
         public static string LabelsFilePath => Path.Combine(RootPath, LabelsFileName);
 
+        private const string DataFolderName = "data";
+
+        /// <summary>
+        /// 插件自己的数据（设置、情感分析缓存、日志）：文档\VPetLLM\Emotion\data。
+        /// 和图片分开放，用户往 Emotion 里拖图时看不到这些文件；表情包整理也不会碰这个目录。
+        /// </summary>
+        public static string DataPath => Path.Combine(RootPath, DataFolderName);
+
+        /// <summary>以前写在 MOD 目录 plugin\data\（更早是 MOD 根目录）的插件数据文件。</summary>
+        private static readonly string[] PluginDataFiles =
+        {
+            "settings.json", "emotion_cache.json", "emotion_cache.version", "VPet.Plugin.LLMEP.log"
+        };
+
         private static readonly JsonSerializerOptions WriteOptions = new()
         {
             WriteIndented = true,
@@ -72,7 +86,7 @@ namespace VPet.Plugin.LLMEP.Utils
                         "把表情包图片直接放进这个文件夹即可（PNG、GIF 动图、JPG/JPEG、BMP），不需要建子文件夹。\r\n\r\n" +
                         "每张图片用于哪些心情，在插件设置的「🏷️ 标签管理」里勾选：开心 / 正常 / 状态不佳 / 生病，可多选。\r\n" +
                         "一个都不勾的图片作为泛用表情包，任何心情下都可能出现。\r\n\r\n" +
-                        "diy_labels.json 保存图片的标签和心情设置，请勿手动删除。\r\n");
+                        "diy_labels.json 保存图片的标签和心情设置，data 文件夹保存插件设置和缓存，请勿手动删除。\r\n");
                 }
             }
             catch (Exception ex)
@@ -80,6 +94,67 @@ namespace VPet.Plugin.LLMEP.Utils
                 Logger.Error("DiyStickerStorage", $"创建 DIY 表情包目录失败: {RootPath}, {ex.Message}");
             }
             return RootPath;
+        }
+
+        /// <summary>确保插件数据目录存在并返回它。</summary>
+        public static string EnsureDataPath()
+        {
+            Directory.CreateDirectory(DataPath);
+            return DataPath;
+        }
+
+        /// <summary>
+        /// 把设置、情感分析缓存、日志从 MOD 目录迁到 <see cref="DataPath"/>。可重复调用。
+        /// 必须在读取设置之前调用：创意工坊更新会清掉 MOD 目录里不属于发布包的文件，
+        /// 设置放那里等于每次更新都可能被重置。
+        /// 新位置已有同名文件时以新位置为准，旧文件改名 .migrated 留作备份。
+        /// </summary>
+        /// <param name="modDirectory">MOD 根目录（info.lps 所在目录）</param>
+        public static void MigratePluginData(string modDirectory)
+        {
+            if (string.IsNullOrEmpty(modDirectory))
+                return;
+
+            try
+            {
+                EnsureDataPath();
+            }
+            catch (Exception ex)
+            {
+                Logger.Error("DiyStickerStorage", $"创建插件数据目录失败: {DataPath}, {ex.Message}");
+                return;
+            }
+
+            // plugin\data 是上一代位置，MOD 根目录是更早的位置；同名时以较新的为准
+            var oldDirectories = new[] { Path.Combine(modDirectory, "plugin", "data"), modDirectory };
+            foreach (var name in PluginDataFiles)
+            {
+                foreach (var oldDirectory in oldDirectories)
+                {
+                    var source = Path.Combine(oldDirectory, name);
+                    if (!File.Exists(source))
+                        continue;
+
+                    var target = Path.Combine(DataPath, name);
+                    try
+                    {
+                        if (File.Exists(target))
+                        {
+                            RetireFile(source);
+                            Logger.Info("DiyStickerStorage", $"{name} 新位置已存在，旧文件已改名 .migrated: {source}");
+                        }
+                        else
+                        {
+                            File.Move(source, target);
+                            Logger.Info("DiyStickerStorage", $"已迁移 {name}: {source} -> {target}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warning("DiyStickerStorage", $"迁移 {name} 失败（下次启动重试）: {ex.Message}");
+                    }
+                }
+            }
         }
 
         /// <summary>目录里的全部表情包图片（只看顶层）。任意线程可调用。</summary>
@@ -208,8 +283,10 @@ namespace VPet.Plugin.LLMEP.Utils
             List<string> files;
             try
             {
+                var dataPrefix = DataPath.TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
                 files = Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories)
                     .Where(IsImageFile)
+                    .Where(f => !f.StartsWith(dataPrefix, StringComparison.OrdinalIgnoreCase)) // 插件数据目录不参与整理
                     .Where(f => includeTopLevel || !string.Equals(Path.GetDirectoryName(f), sourceRoot.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
                     .ToList();
             }
@@ -408,6 +485,10 @@ namespace VPet.Plugin.LLMEP.Utils
                 foreach (var dir in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories)
                              .OrderByDescending(d => d.Length))
                 {
+                    // 插件数据目录即使暂时是空的也要留着，设置保存要用
+                    if (string.Equals(dir.TrimEnd('\\', '/'), DataPath.TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase))
+                        continue;
+
                     var entries = Directory.EnumerateFileSystemEntries(dir).ToList();
                     if (entries.Count == 1 && SkeletonFiles.Contains(Path.GetFileName(entries[0]), StringComparer.OrdinalIgnoreCase))
                     {
