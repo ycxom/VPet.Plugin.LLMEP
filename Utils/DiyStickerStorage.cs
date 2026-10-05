@@ -140,8 +140,18 @@ namespace VPet.Plugin.LLMEP.Utils
                     {
                         if (File.Exists(target))
                         {
-                            RetireFile(source);
-                            Logger.Info("DiyStickerStorage", $"{name} 新位置已存在，旧文件已改名 .migrated: {source}");
+                            if (name.Equals("settings.json", StringComparison.OrdinalIgnoreCase))
+                            {
+                                // 旧设置里是明文 API Key：不能像别的文件那样留 .migrated 备份，
+                                // 否则加密落盘形同虚设。新位置为准，旧文件覆写后删除
+                                SecretProtector.ShredFile(source);
+                                Logger.Info("DiyStickerStorage", $"{name} 新位置已存在，旧文件（含明文密钥）已覆写删除: {source}");
+                            }
+                            else
+                            {
+                                RetireFile(source);
+                                Logger.Info("DiyStickerStorage", $"{name} 新位置已存在，旧文件已改名 .migrated: {source}");
+                            }
                         }
                         else
                         {

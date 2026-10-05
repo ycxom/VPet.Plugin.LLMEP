@@ -23,12 +23,15 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
         public LLMProvider Provider { get; set; } = LLMProvider.Free;
 
         // OpenAI设置
+        // 密钥：settings.json 里加密落盘（DPAPI），内存中仍是明文
+        [System.Text.Json.Serialization.JsonConverter(typeof(VPet.Plugin.LLMEP.Utils.ProtectedStringJsonConverter))]
         public string OpenAIApiKey { get; set; } = "";
         public string OpenAIBaseUrl { get; set; } = "https://api.openai.com/v1";
         public string OpenAIModel { get; set; } = "gpt-3.5-turbo";
         public string OpenAIEmbeddingModel { get; set; } = "text-embedding-3-small";
 
         // Gemini设置
+        [System.Text.Json.Serialization.JsonConverter(typeof(VPet.Plugin.LLMEP.Utils.ProtectedStringJsonConverter))]
         public string GeminiApiKey { get; set; } = "";
         public string GeminiBaseUrl { get; set; } = "https://generativelanguage.googleapis.com/v1beta";
         public string GeminiModel { get; set; } = "gemini-pro";

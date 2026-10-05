@@ -92,7 +92,8 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
 
                 // 记录完整的HTTP请求信息
                 _imageMgr?.LogDebug("Gemini", "=== Gemini HTTP 请求开始 ===");
-                _imageMgr?.LogDebug("Gemini", $"URL: {url}");
+                // key 拼在 URL 的 ?key= 里，打印前必须抹掉
+                _imageMgr?.LogDebug("Gemini", $"URL: {(string.IsNullOrEmpty(_apiKey) ? url : url.Replace(_apiKey, "***"))}");
                 _imageMgr?.LogDebug("Gemini", $"Method: POST");
                 _imageMgr?.LogDebug("Gemini", $"Content-Type: application/json");
                 _imageMgr?.LogDebug("Gemini", "请求体:");

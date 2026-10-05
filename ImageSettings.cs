@@ -158,7 +158,24 @@ namespace VPet.Plugin.LLMEP
                 if (File.Exists(filePath))
                 {
                     string json = File.ReadAllText(filePath);
+                    Utils.SecretProtector.SawPlaintext = false;
                     var settings = JsonSerializer.Deserialize<ImageSettings>(json);
+
+                    // 旧版本写的明文 API Key：读到就立刻回写成密文，
+                    // 否则明文会一直留到用户下次点保存
+                    if (settings != null && Utils.SecretProtector.SawPlaintext)
+                    {
+                        try
+                        {
+                            settings.SaveToFile(filePath);
+                            Utils.Logger.Log("[VPet表情包] settings.json 中的明文密钥已转为加密存储");
+                        }
+                        catch (Exception ex)
+                        {
+                            Utils.Logger.Log($"[VPet表情包] 明文密钥回写加密失败（下次启动重试）: {ex.Message}");
+                        }
+                    }
+
                     return settings ?? new ImageSettings();
                 }
             }
@@ -189,8 +206,13 @@ namespace VPet.Plugin.LLMEP
                     WriteIndented = true
                 };
 
+                // 密钥字段在序列化时由 ProtectedStringJsonConverter 加密（DPAPI）；
+                // 加密失败会在这里抛出，宁可这次保存失败也不回退成明文落盘。
+                // 先写临时文件再替换：密文写到一半崩溃的话就无法恢复了
                 string json = JsonSerializer.Serialize(this, options);
-                File.WriteAllText(filePath, json);
+                string tmp = filePath + ".tmp";
+                File.WriteAllText(tmp, json);
+                File.Move(tmp, filePath, overwrite: true);
             }
             catch (Exception ex)
             {

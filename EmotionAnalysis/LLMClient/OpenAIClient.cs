@@ -80,7 +80,8 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 _imageMgr?.LogDebug("OpenAI", $"URL: {_baseUrl}/chat/completions");
                 _imageMgr?.LogDebug("OpenAI", $"Method: POST");
                 _imageMgr?.LogDebug("OpenAI", $"Content-Type: application/json");
-                _imageMgr?.LogDebug("OpenAI", $"Authorization: Bearer {(_apiKey?.Length > 10 ? _apiKey.Substring(0, 10) + "..." : _apiKey)}");
+                // 密钥不进日志（过去这里打印前 10 位，key 不足 10 位时是整个 key）
+                _imageMgr?.LogDebug("OpenAI", "Authorization: Bearer ***");
                 _imageMgr?.LogDebug("OpenAI", "请求体:");
                 _imageMgr?.LogDebug("OpenAI", json);
                 _imageMgr?.LogDebug("OpenAI", "=== OpenAI HTTP 请求结束 ===");

@@ -21,8 +21,9 @@ namespace VPet.Plugin.LLMEP
         public string ServiceUrl { get; set; } = "";
 
         /// <summary>
-        /// 自定义 API Key（当不使用内置凭证时）
+        /// 自定义 API Key（当不使用内置凭证时）。settings.json 里加密落盘（DPAPI），内存中仍是明文
         /// </summary>
+        [System.Text.Json.Serialization.JsonConverter(typeof(VPet.Plugin.LLMEP.Utils.ProtectedStringJsonConverter))]
         public string ApiKey { get; set; } = "";
 
         /// <summary>

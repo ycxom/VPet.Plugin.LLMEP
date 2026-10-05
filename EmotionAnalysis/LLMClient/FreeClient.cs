@@ -461,7 +461,8 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 _imageMgr?.LogDebug("FreeClient", $"URL: {_apiUrl}");
                 _imageMgr?.LogDebug("FreeClient", $"Method: POST");
                 _imageMgr?.LogDebug("FreeClient", $"Content-Type: application/json");
-                _imageMgr?.LogDebug("FreeClient", $"Authorization: Bearer {(_apiKey?.Length > 10 ? _apiKey.Substring(0, 10) + "..." : _apiKey)}");
+                // 密钥不进日志（过去这里打印前 10 位，key 不足 10 位时是整个 key）
+                _imageMgr?.LogDebug("FreeClient", "Authorization: Bearer ***");
                 _imageMgr?.LogDebug("FreeClient", "请求体:");
                 _imageMgr?.LogDebug("FreeClient", json);
                 _imageMgr?.LogDebug("FreeClient", "=== Free HTTP 请求结束 ===");
