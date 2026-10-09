@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- 宿主 VPet 已是 .NET 10 自包含。旧宿主加载不了本体，由 RuntimeCheck 弹窗提示更新游戏。 -->
+    <TargetFramework>net10.0-windows</TargetFramework>
     <OutputType>Library</OutputType>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <UseWPF>true</UseWPF>
@@ -16,6 +17,15 @@
     <EmbeddedResource Remove="3001_LLMEP\**" />
     <Page Remove="3001_LLMEP\**" />
     <None Include="3001_LLMEP\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- 旧版游戏本体检测是独立的 net8 程序集，不编进本体 -->
+    <Compile Remove="RuntimeCheck\**" />
+    <None Remove="RuntimeCheck\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 只为让它随本体一起还原，不引用其输出；编译和拷贝在 CopyToPlugin 里 -->
+    <ProjectReference Include="RuntimeCheck\LLMEP.RuntimeCheck.csproj"
+                      ReferenceOutputAssembly="false" Private="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -31,10 +41,8 @@
   <ItemGroup>
     <PackageReference Include="VPet-Simulator.Core" Version="1.1.0.58" />
     <PackageReference Include="VPet-Simulator.Windows.Interface" Version="1.1.0.58" />
-    <PackageReference Include="System.Text.Json" Version="8.0.5" />
     <PackageReference Include="Panuon.WPF" Version="1.1.3" />
     <PackageReference Include="Panuon.WPF.UI" Version="1.2.4.10" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
   
   <!-- 编译后自动复制 DLL 到 plugin 目录 -->
@@ -44,6 +52,12 @@
       <PluginFiles Include="$(OutputPath)*.dll" Exclude="$(OutputPath)VPet-Simulator*.dll" />
     </ItemGroup>
     <Copy SourceFiles="@(PluginFiles)" DestinationFolder="$(ProjectDir)3001_LLMEP\plugin\" SkipUnchangedFiles="true" />
+    <!-- 旧版游戏本体检测（net8），见 RuntimeCheck/RuntimeCheckPlugin.cs。
+         本工程开着 DesignTimeBuild，ProjectReference 只还原不编译，所以这里显式编一次。 -->
+    <MSBuild Projects="$(ProjectDir)RuntimeCheck\LLMEP.RuntimeCheck.csproj" Targets="Build"
+             Properties="Configuration=$(Configuration)" />
+    <Copy SourceFiles="$(ProjectDir)RuntimeCheck\bin\$(Configuration)\net8.0-windows\LLMEP.RuntimeCheck.dll"
+          DestinationFolder="$(ProjectDir)3001_LLMEP\plugin\" SkipUnchangedFiles="true" />
     <!-- 原生鉴权组件必须留在 runtimes 目录里：mod_id 是按它所在目录往上找 info.lps 得到的。 -->
     <Copy SourceFiles="$(OutputPath)runtimes\win-x64\native\VPetLLM.SecureCommunication.dll"
           DestinationFolder="$(ProjectDir)3001_LLMEP\plugin\runtimes\win-x64\native"

@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace VPet.Plugin.LLMEP.EmotionAnalysis
@@ -27,16 +29,28 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
     public class VectorRetriever : IVectorRetriever
     {
         private readonly ILLMClient _llmClient;
-        private readonly Dictionary<string, float[]> _labelEmbeddings; // 标签 -> 向量
+        // 预计算在后台写、匹配时读，所以用并发字典
+        private readonly ConcurrentDictionary<string, float[]> _labelEmbeddings; // 标签 -> 向量
         private readonly Dictionary<string, List<string>> _imageLabels; // 图片文件名 -> 标签列表
         private readonly List<string> _allImages; // 所有图片文件名
+        // 内置标签和 DIY 标签各触发一次预计算，两轮排队跑，第二轮跳过已算过的标签
+        private readonly SemaphoreSlim _precomputeLock = new(1, 1);
+        // 渠道没有嵌入接口（如 Free）。一旦确认就不再逐个标签去试，否则每次启动刷几百行日志
+        private volatile bool _embeddingUnsupported;
 
         public VectorRetriever(ILLMClient llmClient)
         {
             _llmClient = llmClient;
-            _labelEmbeddings = new Dictionary<string, float[]>();
+            _labelEmbeddings = new ConcurrentDictionary<string, float[]>();
             _imageLabels = new Dictionary<string, List<string>>();
             _allImages = new List<string>();
+        }
+
+        private void MarkEmbeddingUnsupported(NotSupportedException ex)
+        {
+            if (_embeddingUnsupported) return;
+            _embeddingUnsupported = true;
+            Utils.Logger.Log($"[VectorRetriever] 当前渠道不支持嵌入（{ex.Message}），向量检索停用，改用标签匹配");
         }
 
         public void LoadLabels(string labelFilePath)
@@ -103,28 +117,38 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
         /// </summary>
         private async Task PrecomputeLabelEmbeddingsAsync()
         {
+            // 在调用方线程上取快照：LoadLabels 返回后调用方可能接着再次写 _imageLabels
+            var allLabels = _imageLabels.Values
+                .SelectMany(labels => labels)
+                .Distinct()
+                .ToList();
+
+            await _precomputeLock.WaitAsync().ConfigureAwait(false);
             try
             {
-                var allLabels = _imageLabels.Values
-                    .SelectMany(labels => labels)
-                    .Distinct()
-                    .ToList();
+                if (_embeddingUnsupported)
+                    return;
 
-                Utils.Logger.Log($"[VectorRetriever] Precomputing embeddings for {allLabels.Count} unique labels...");
+                var pending = allLabels.Where(l => !_labelEmbeddings.ContainsKey(l)).ToList();
+                if (pending.Count == 0)
+                    return;
 
-                foreach (var label in allLabels)
+                Utils.Logger.Log($"[VectorRetriever] Precomputing embeddings for {pending.Count} unique labels...");
+
+                foreach (var label in pending)
                 {
-                    if (!_labelEmbeddings.ContainsKey(label))
+                    try
                     {
-                        try
-                        {
-                            var embedding = await _llmClient.GetEmbeddingAsync(label);
-                            _labelEmbeddings[label] = embedding;
-                        }
-                        catch (Exception ex)
-                        {
-                            Utils.Logger.Log($"[VectorRetriever] Failed to compute embedding for '{label}': {ex.Message}");
-                        }
+                        _labelEmbeddings[label] = await _llmClient.GetEmbeddingAsync(label).ConfigureAwait(false);
+                    }
+                    catch (NotSupportedException ex)
+                    {
+                        MarkEmbeddingUnsupported(ex);
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        Utils.Logger.Log($"[VectorRetriever] Failed to compute embedding for '{label}': {ex.Message}");
                     }
                 }
 
@@ -133,6 +157,10 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
             catch (Exception ex)
             {
                 Utils.Logger.Log($"[VectorRetriever] Error precomputing embeddings: {ex.Message}");
+            }
+            finally
+            {
+                _precomputeLock.Release();
             }
         }
 
@@ -147,6 +175,9 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                     return new List<string>();
                 }
 
+                if (_embeddingUnsupported)
+                    return new List<string>();
+
                 // 计算情感关键词的向量嵌入
                 var emotionEmbeddings = new List<float[]>();
                 foreach (var emotion in emotions)
@@ -155,6 +186,11 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                     {
                         var embedding = await _llmClient.GetEmbeddingAsync(emotion);
                         emotionEmbeddings.Add(embedding);
+                    }
+                    catch (NotSupportedException ex)
+                    {
+                        MarkEmbeddingUnsupported(ex);
+                        return new List<string>();
                     }
                     catch (Exception ex)
                     {

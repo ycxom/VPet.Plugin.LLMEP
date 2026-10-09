@@ -1,9 +1,10 @@
 #nullable enable
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using VPet.Plugin.LLMEP.Utils;
 
@@ -207,7 +208,7 @@ namespace VPet.Plugin.LLMEP.Services
             try
             {
                 var url = _baseUrl + "/api/image";
-                var json = JsonConvert.SerializeObject(new { id });
+                var json = JsonSerializer.Serialize(new { id });
 
                 using var requestMessage = new HttpRequestMessage(HttpMethod.Post, url);
                 requestMessage.Content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -244,7 +245,7 @@ namespace VPet.Plugin.LLMEP.Services
             try
             {
                 var url = _baseUrl + endpoint;
-                var json = JsonConvert.SerializeObject(request);
+                var json = JsonSerializer.Serialize(request);
 
                 using var requestMessage = new HttpRequestMessage(HttpMethod.Post, url);
                 requestMessage.Content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -254,7 +255,7 @@ namespace VPet.Plugin.LLMEP.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    return JsonConvert.DeserializeObject<TResponse>(responseJson);
+                    return JsonSerializer.Deserialize<TResponse>(responseJson);
                 }
 
                 LastError = $"HTTP {(int)response.StatusCode}";
@@ -289,82 +290,82 @@ namespace VPet.Plugin.LLMEP.Services
 
     public class SearchRequest
     {
-        [JsonProperty("query")]
+        [JsonPropertyName("query")]
         public string Query { get; set; } = string.Empty;
 
-        [JsonProperty("limit")]
+        [JsonPropertyName("limit")]
         public int Limit { get; set; } = 1;
 
-        [JsonProperty("minScore")]
+        [JsonPropertyName("minScore")]
         public double MinScore { get; set; } = 0.2;
 
-        [JsonProperty("includeBase64")]
+        [JsonPropertyName("includeBase64")]
         public bool IncludeBase64 { get; set; } = false;
 
-        [JsonProperty("random")]
+        [JsonPropertyName("random")]
         public bool Random { get; set; } = true;
     }
 
     public class SearchResponse
     {
-        [JsonProperty("success")]
+        [JsonPropertyName("success")]
         public bool Success { get; set; }
 
-        [JsonProperty("results")]
+        [JsonPropertyName("results")]
         public List<SearchResult> Results { get; set; } = new();
 
-        [JsonProperty("error")]
+        [JsonPropertyName("error")]
         public string? Error { get; set; }
     }
 
     public class SearchResult
     {
-        [JsonProperty("id")]
+        [JsonPropertyName("id")]
         public string? Id { get; set; }
 
-        [JsonProperty("filename")]
+        [JsonPropertyName("filename")]
         public string Filename { get; set; } = string.Empty;
 
-        [JsonProperty("filepath")]
+        [JsonPropertyName("filepath")]
         public string? Filepath { get; set; }
 
-        [JsonProperty("tags")]
+        [JsonPropertyName("tags")]
         public List<string> Tags { get; set; } = new();
 
-        [JsonProperty("score")]
+        [JsonPropertyName("score")]
         public double Score { get; set; }
 
-        [JsonProperty("created_at")]
+        [JsonPropertyName("created_at")]
         public string? CreatedAt { get; set; }
 
-        [JsonProperty("base64")]
+        [JsonPropertyName("base64")]
         public string? Base64 { get; set; }
     }
 
     public class TagsResponse
     {
-        [JsonProperty("success")]
+        [JsonPropertyName("success")]
         public bool Success { get; set; }
 
-        [JsonProperty("tags")]
+        [JsonPropertyName("tags")]
         public List<string> Tags { get; set; } = new();
 
-        [JsonProperty("error")]
+        [JsonPropertyName("error")]
         public string? Error { get; set; }
     }
 
     public class StatsResponse
     {
-        [JsonProperty("success")]
+        [JsonPropertyName("success")]
         public bool Success { get; set; }
 
-        [JsonProperty("totalImages")]
+        [JsonPropertyName("totalImages")]
         public int TotalImages { get; set; }
 
-        [JsonProperty("indexedImages")]
+        [JsonPropertyName("indexedImages")]
         public int IndexedImages { get; set; }
 
-        [JsonProperty("error")]
+        [JsonPropertyName("error")]
         public string? Error { get; set; }
     }
 }

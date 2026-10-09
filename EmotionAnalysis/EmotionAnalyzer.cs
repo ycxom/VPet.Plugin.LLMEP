@@ -319,10 +319,16 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis
                                 Utils.Logger.Debug("EmotionAnalyzer", "向量匹配成功，返回匹配的图片");
                                 return matchedImage;
                             }
-                            else
+
+                            // 向量匹配落空（渠道没有嵌入接口，如 Free；或嵌入请求失败）时先按标签名匹配。
+                            // 传统模式的提示词同样带着候选标签列表，模型返回的词能直接对上图片标签
+                            matchedImage = _imageMgr.GetLabelImageMatcher()?.MatchImagePathByTags(emotionTags);
+                            if (matchedImage != null)
                             {
-                                Utils.Logger.Debug("EmotionAnalyzer", "向量匹配失败，使用降级方案");
+                                Utils.Logger.Debug("EmotionAnalyzer", "向量匹配失败，标签匹配成功");
+                                return matchedImage;
                             }
+                            Utils.Logger.Debug("EmotionAnalyzer", "向量匹配和标签匹配都失败，使用降级方案");
                         }
                         else
                         {

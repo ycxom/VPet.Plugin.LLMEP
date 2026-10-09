@@ -1,11 +1,11 @@
-﻿using Newtonsoft.Json.Linq;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using VPet.Plugin.LLMEP.Utils;
 
@@ -178,7 +178,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                             var decryptedContent = DecryptConfig(encryptedContent);
                             if (!string.IsNullOrEmpty(decryptedContent))
                             {
-                                var json = JObject.Parse(decryptedContent);
+                                var json = ParseObject(decryptedContent);
                                 var model = json["Model"]?.ToString();
                                 if (model == "bymbymbym") // Chat配置的特征
                                 {
@@ -233,7 +233,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
         /// <summary>
         /// 下载版本信息
         /// </summary>
-        private async Task<JObject> DownloadVersionInfoAsync()
+        private async Task<JsonObject> DownloadVersionInfoAsync()
         {
             try
             {
@@ -246,7 +246,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 _imageMgr?.LogDebug("FreeClient", $"开始下载版本信息: {url}");
                 var response = await client.GetStringAsync(url);
                 _imageMgr?.LogDebug("FreeClient", $"版本信息下载成功，内容长度: {response.Length}");
-                var versionInfo = JObject.Parse(response);
+                var versionInfo = ParseObject(response);
                 _imageMgr?.LogDebug("FreeClient", $"版本信息解析成功");
                 return versionInfo;
             }
@@ -260,7 +260,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
         /// <summary>
         /// 检查并更新配置文件
         /// </summary>
-        private async Task<bool> CheckAndUpdateConfigAsync(string configName, JObject versionInfo)
+        private async Task<bool> CheckAndUpdateConfigAsync(string configName, JsonObject versionInfo)
         {
             try
             {
@@ -398,7 +398,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                             var decryptedContent = DecryptConfig(encryptedContent);
                             if (!string.IsNullOrEmpty(decryptedContent))
                             {
-                                var json = JObject.Parse(decryptedContent);
+                                var json = ParseObject(decryptedContent);
                                 var model = json["Model"]?.ToString();
 
                                 // 根据Model判断配置类型，只删除同类型的旧配置
@@ -561,8 +561,8 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
 
         public async Task<float[]> GetEmbeddingAsync(string text)
         {
-            // Free服务通常不提供嵌入功能，返回空数组或抛出异常
-            _imageMgr?.LogWarning("FreeClient", "Free服务不支持嵌入功能");
+            // Free 服务没有嵌入接口。VectorRetriever 见到 NotSupportedException 就停用向量检索并只记一次日志，
+            // 所以这里不再逐次记录（以前启动时每个标签一行警告，几百行）
             throw new NotSupportedException("Free服务不支持嵌入功能");
         }
 
@@ -698,8 +698,8 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 if (config != null)
                 {
                     var langCode = GetCurrentLanguageCode();
-                    var description = config["Language"]?.Value<JObject>()?["Description"]?.Value<string>(langCode);
-                    return description ?? config["Language"]?.Value<JObject>()?["Description"]?.Value<string>("zh-hans") ??
+                    var description = ReadLocalized(config, "Description", langCode);
+                    return description ?? ReadLocalized(config, "Description", "zh-hans") ??
                            "Free Chat 使用内置的免费LLM服务，无需配置 API Key。";
                 }
             }
@@ -721,8 +721,8 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 if (config != null)
                 {
                     var langCode = GetCurrentLanguageCode();
-                    var provider = config["Language"]?.Value<JObject>()?["Provider"]?.Value<string>(langCode);
-                    return provider ?? config["Language"]?.Value<JObject>()?["Provider"]?.Value<string>("zh-hans") ??
+                    var provider = ReadLocalized(config, "Provider", langCode);
+                    return provider ?? ReadLocalized(config, "Provider", "zh-hans") ??
                            "感谢提供者 QQ：790132463";
                 }
             }
@@ -734,9 +734,23 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
         }
 
         /// <summary>
+        /// 读 <c>Language.{field}.{langCode}</c>。缺任何一层都返回 null；某层不是对象时抛，
+        /// 交给调用方的 catch 回落默认文案。
+        /// </summary>
+        private static string ReadLocalized(JsonObject config, string field, string langCode)
+            => config["Language"]?[field]?[langCode]?.ToString();
+
+        /// <summary>
+        /// 解析一份必须是对象的 JSON。根不是对象就抛 —— 调用方的 catch 依赖这一点来
+        /// 跳过（或清理）损坏的配置文件。
+        /// </summary>
+        private static JsonObject ParseObject(string json)
+            => JsonNode.Parse(json) as JsonObject ?? throw new JsonException("JSON 根节点不是对象");
+
+        /// <summary>
         /// 获取Chat配置（简化版本，不依赖VPetLLM的完整FreeConfigManager）
         /// </summary>
-        private JObject GetChatConfig()
+        private JsonObject GetChatConfig()
         {
             try
             {
@@ -764,7 +778,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                             var decryptedContent = DecryptConfig(encryptedContent);
                             if (!string.IsNullOrEmpty(decryptedContent))
                             {
-                                var json = JObject.Parse(decryptedContent);
+                                var json = ParseObject(decryptedContent);
                                 // 检查是否是Chat配置（通过Model字段判断）
                                 var model = json["Model"]?.ToString();
                                 if (model == "bymbymbym") // Chat配置的特征
