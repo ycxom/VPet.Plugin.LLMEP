@@ -130,11 +130,8 @@ namespace VPet.Plugin.LLMEP
 
                 Utils.Logger.Info("Plugin", "开始加载插件");
 
-                // 挂接退出事件。
-                //
-                // 这个插件此前没有任何关闭钩子：UnloadPlugin() 没有调用点（死代码），
-                // 也没有重写 Save()。后果有两个——设置窗口在退出时不会被关闭，
-                // 以及情感分析缓存的最后一批改动来不及落盘。
+                // 挂接退出事件。真正生效的是 EndGame()：宿主退出时调完各插件的 EndGame 就
+                // Environment.Exit，Application.Exit 根本不会触发。这里只作兜底
                 if (Application.Current is not null)
                 {
                     Application.Current.Exit += OnApplicationExit;
@@ -383,7 +380,18 @@ namespace VPet.Plugin.LLMEP
         }
 
         /// <summary>
-        /// VPet 退出时的收尾。挂在 Application.Exit 上。
+        /// 宿主关闭本窗口（退出、重启、多开时关掉其中一只）时调用，在 UI 线程上。
+        /// 之后宿主直接 Environment.Exit，不会再触发 Application.Exit，所以收尾必须放在这里：
+        /// 否则情感缓存最后一批改动不落盘、设置窗口不关（主窗口句柄先没了会抛 1400），
+        /// 多开时被关掉的那只的定时器还会接着跑。
+        /// </summary>
+        public override void EndGame()
+        {
+            UnloadPlugin();
+        }
+
+        /// <summary>
+        /// Application.Exit 兜底。正常退出走不到这里，见 EndGame。
         /// </summary>
         private void OnApplicationExit(object sender, ExitEventArgs e)
         {
@@ -427,6 +435,7 @@ namespace VPet.Plugin.LLMEP
 
                 // 停止定时器
                 StopTimer();
+                sessionCleanupTimer?.Stop();
 
                 // 清理气泡文本监听器
                 CleanupBubbleTextListener();

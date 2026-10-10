@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
 using System.Threading.Tasks;
 using VPet.Plugin.LLMEP.Utils;
 
@@ -46,6 +47,15 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
 
         private string _apiKey;
         private string _apiUrl;
+
+        // 构造时发现没有配置就后台下载一份；请求时配置还空着就等它下完再读一遍
+        private Task _configDownload = Task.CompletedTask;
+        private readonly SemaphoreSlim _configReload = new(1, 1);
+
+        /// <summary>请求最多等后台配置下载这么久（版本信息、配置文件各 10 秒超时）。</summary>
+        private static readonly TimeSpan ConfigDownloadWait = TimeSpan.FromSeconds(25);
+
+        private bool HasConfig => !string.IsNullOrEmpty(_apiUrl) && !string.IsNullOrEmpty(_apiKey);
 
         // 保留硬编码的User-Agent（与VPetLLM保持一致）
         private const string ENCODED_UA = "566c426c6445784d54563947636d566c58304a3558304a5a54513d3d";
@@ -91,7 +101,7 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                 }
                 else
                 {
-                    _imageMgr?.LogWarning("FreeClient", "Free配置文件不存在，请等待配置下载完成后重启程序");
+                    _imageMgr?.LogWarning("FreeClient", "Free配置文件不存在，已在后台下载，发请求时会再读一次");
                     _apiKey = "";
                     _apiUrl = "";
                 }
@@ -127,15 +137,15 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
                     _imageMgr?.LogInfo("FreeClient", "未找到有效的Free配置，尝试初始化配置...");
                     _imageMgr?.LogInfo("FreeClient", "正在后台下载Free配置文件，请稍候...");
 
-                    // 异步初始化配置，但不等待完成（避免阻塞UI）
-                    Task.Run(async () =>
+                    // 异步初始化配置，但不等待完成（避免阻塞UI）。请求时会等它，见 EnsureConfigLoadedAsync
+                    _configDownload = Task.Run(async () =>
                     {
                         try
                         {
                             var success = await InitializeConfigsAsync();
                             if (success)
                             {
-                                _imageMgr?.LogInfo("FreeClient", "Free配置初始化成功！请重新尝试使用Free提供商");
+                                _imageMgr?.LogInfo("FreeClient", "Free配置初始化成功");
                             }
                             else
                             {
@@ -429,13 +439,47 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
             }
         }
 
+        /// <summary>
+        /// 配置还空着时补一次：等构造时发起的后台下载结束，再重新读。
+        /// 以前首次使用时配置往往还没下完，只能提示"下载完成后重启程序"。
+        /// VPetLLM 也会往同一个目录下载这份配置，所以即使本插件自己没下成，重读也可能拿到。
+        /// </summary>
+        private async Task<bool> EnsureConfigLoadedAsync()
+        {
+            if (HasConfig) return true;
+
+            await _configReload.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (HasConfig) return true;
+
+                if (!_configDownload.IsCompleted)
+                {
+                    _imageMgr?.LogInfo("FreeClient", "Free配置仍在下载，等待完成后再请求");
+                    await Task.WhenAny(_configDownload, Task.Delay(ConfigDownloadWait)).ConfigureAwait(false);
+                }
+
+                LoadConfig();
+                if (HasConfig)
+                {
+                    _httpClient.DefaultRequestHeaders.Authorization =
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _apiKey);
+                }
+                return HasConfig;
+            }
+            finally
+            {
+                _configReload.Release();
+            }
+        }
+
         public async Task<string> SendRequestAsync(string prompt)
         {
             try
             {
-                if (string.IsNullOrEmpty(_apiUrl) || string.IsNullOrEmpty(_apiKey))
+                if (!await EnsureConfigLoadedAsync().ConfigureAwait(false))
                 {
-                    var errorMessage = "Free Chat 配置未加载，请等待配置下载完成后重启程序";
+                    var errorMessage = "Free Chat 配置下载失败，请检查网络连接后再试";
                     _imageMgr?.LogError("FreeClient", errorMessage);
                     throw new Exception(errorMessage);
                 }
@@ -576,9 +620,9 @@ namespace VPet.Plugin.LLMEP.EmotionAnalysis.LLMClient
         {
             try
             {
-                if (string.IsNullOrEmpty(_apiUrl) || string.IsNullOrEmpty(_apiKey))
+                if (!await EnsureConfigLoadedAsync().ConfigureAwait(false))
                 {
-                    var errorMessage = "Free Chat 配置未加载，请等待配置下载完成后重启程序";
+                    var errorMessage = "Free Chat 配置下载失败，请检查网络连接后再试";
                     _imageMgr?.LogError("FreeClient", errorMessage);
                     throw new Exception(errorMessage);
                 }
