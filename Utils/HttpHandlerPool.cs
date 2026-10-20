@@ -12,14 +12,16 @@ namespace VPet.Plugin.LLMEP.Utils
     /// 调用方拿到的仍然是独立的 <see cref="HttpClient"/> 实例（可以自由设置 Timeout、
     /// DefaultRequestHeaders，互不影响），但它以 disposeHandler:false 构造，
     /// 所以 using 结束时只回收这个很轻的壳子，底层连接池继续复用。
+    ///
+    /// 轮换下来的 handler <b>不主动 Dispose</b>，交给 GC：四个 LLM 客户端（Free/OpenAI/Gemini/Ollama）
+    /// 都把 HttpClient 存成字段一直用。以前退休 2 分钟后就 Dispose，情感分析从启动第 12 分钟起
+    /// 每次请求都抛 ObjectDisposedException，直到重建客户端。
+    /// 没人再引用的 handler（空闲连接也算在内）GC 照样能回收，已实测。
     /// </summary>
     internal static class HttpHandlerPool
     {
-        /// <summary>handler 的轮换周期，用于跟进 DNS / 系统代理变化。</summary>
+        /// <summary>handler 的轮换周期，用于跟进 DNS / 系统代理变化。只影响之后新建的客户端。</summary>
         private static readonly TimeSpan HandlerLifetime = TimeSpan.FromMinutes(10);
-
-        /// <summary>退休 handler 的宽限期，等在途请求结束后再真正释放。</summary>
-        private static readonly TimeSpan DisposeGrace = TimeSpan.FromMinutes(2);
 
         private sealed class Entry
         {
@@ -28,7 +30,6 @@ namespace VPet.Plugin.LLMEP.Utils
         }
 
         private static readonly ConcurrentDictionary<string, Entry> _entries = new ConcurrentDictionary<string, Entry>(StringComparer.Ordinal);
-        private static readonly ConcurrentQueue<(HttpClientHandler Handler, DateTime RetiredUtc)> _retired = new ConcurrentQueue<(HttpClientHandler, DateTime)>();
         private static readonly object _rotateLock = new object();
 
         /// <summary>
@@ -62,8 +63,8 @@ namespace VPet.Plugin.LLMEP.Utils
 
             if (_entries.TryGetValue(key, out var existing) && now - existing.CreatedUtc < HandlerLifetime)
             {
+                // 没发过请求、不持有连接，可以放心释放
                 candidate.Dispose();
-                DrainRetired(now);
                 return existing.Handler;
             }
 
@@ -76,34 +77,21 @@ namespace VPet.Plugin.LLMEP.Utils
                     return current.Handler;
                 }
 
-                if (current != null)
-                {
-                    // 过期的 handler 不能立刻 Dispose，在途请求还挂在上面。
-                    _retired.Enqueue((current.Handler, now));
-                }
-
+                // 过期的那个直接换掉，不 Dispose：可能还有长期持有它的客户端（见类注释）
                 _entries[key] = new Entry { Handler = candidate, CreatedUtc = now };
             }
 
-            DrainRetired(now);
             return candidate;
         }
 
         /// <summary>
-        /// 代理配置变更后调用，让后续请求换用新 handler。
+        /// 代理配置变更后调用，让后续请求换用新 handler。旧 handler 同样交给 GC。
         /// </summary>
         public static void InvalidateAll()
         {
-            var now = DateTime.UtcNow;
             lock (_rotateLock)
             {
-                foreach (var key in _entries.Keys.ToList())
-                {
-                    if (_entries.TryRemove(key, out var entry))
-                    {
-                        _retired.Enqueue((entry.Handler, now));
-                    }
-                }
+                _entries.Clear();
             }
         }
 
@@ -129,29 +117,6 @@ namespace VPet.Plugin.LLMEP.Utils
             return web != null && web.Address != null
                 ? "proxy:" + web.Address.AbsoluteUri
                 : "sysproxy:" + handler.Proxy.GetType().FullName;
-        }
-
-        /// <summary>
-        /// 释放已过宽限期的退休 handler。
-        /// </summary>
-        private static void DrainRetired(DateTime now)
-        {
-            while (_retired.TryPeek(out var item) && now - item.RetiredUtc > DisposeGrace)
-            {
-                if (!_retired.TryDequeue(out item))
-                {
-                    break;
-                }
-
-                try
-                {
-                    item.Handler.Dispose();
-                }
-                catch (Exception ex)
-                {
-                    Logger.Error("HttpHandlerPool", $"释放过期 handler 失败: {ex.Message}");
-                }
-            }
         }
     }
 }
